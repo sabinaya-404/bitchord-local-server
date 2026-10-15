@@ -19,9 +19,11 @@ AUDIO_EXTENSIONS = {
     ".wv",
 }
 
+
 def get_tag(tags, name, fallback):
     values = tags.get(name, []) if tags else []
     return str(values[0].strip() if values else fallback)
+
 
 def scan_music(music_dirs):
     tracks = []
@@ -44,20 +46,31 @@ def scan_music(music_dirs):
                 artist = get_tag(audio, "artist", "Unknown Artist")
                 album = get_tag(audio, "album", "Unknown Album")
                 duration = audio.info.length
+                codec = path.suffix[1:].lower()
+                sample_rate = getattr(audio.info, "sample_rate", None)
+                bit_depth = getattr(audio.info, "bits_per_sample", None)
+                bitrate = getattr(audio.info, "bitrate", None)
 
                 track_id = hashlib.sha256(
                     str(path.resolve()).casefold().encode("utf-8")
                 ).hexdigest()[:16]
 
-                tracks.append({
-                    "id": track_id,
-                    "title": title,
-                    "artist": artist,
-                    "album": album,
-                    "duration": round(duration),
-                    "format": path.suffix[1:].lower(),
-                    "path": path.resolve(),
-                })
+                tracks.append(
+                    {
+                        "id": track_id,
+                        "title": title,
+                        "artist": artist,
+                        "album": album,
+                        "duration": round(duration),
+                        "format": path.suffix[1:].lower(),
+                        "codec": codec,
+                        "container": path.suffix[1:].lower(),
+                        "sampleRate": sample_rate,
+                        "bitDepth": bit_depth,
+                        "bitrate": bitrate,
+                        "path": path.resolve(),
+                    }
+                )
 
             except (OSError, ValueError, TypeError, KeyError):
                 continue
