@@ -1,4 +1,3 @@
-
 import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -46,27 +45,56 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if route == "/search":
-            query = parse_qs(request.query).get("q", [""])[0].strip().casefold()
+            query = (
+                parse_qs(request.query).get("q", [""])[0].strip().casefold()
+            )
 
             tracks = [
-                track for track in TRACKS
-                if query and query in " ".join([
-                    track["title"],
-                    track["artist"],
-                    track["album"],
-                ]).casefold()
+                track
+                for track in TRACKS
+                if query
+                and query
+                in " ".join(
+                    [
+                        track["title"],
+                        track["artist"],
+                        track["album"],
+                    ]
+                ).casefold()
             ]
 
-            self.send_json({
-                "tracks": [
-                    {key: value for key, value in track.items() if key != "path"}
-                    for track in tracks
-                ]
-            })
+            self.send_json(
+                {
+                    "tracks": [
+                        {
+                            **{
+                                key: value
+                                for key, value in track.items()
+                                if key != "path"
+                            },
+                            "audioQuality": (
+                                "LOSSLESS"
+                                if track["format"] == "flac"
+                                else "HIGH"
+                            ),
+                        }
+                        for track in tracks
+                    ]
+                }
+            )
             return
 
         if route.startswith("/stream/"):
             track_id = route.removeprefix("/stream/")
+            quality = (
+                parse_qs(request.query)
+                .get("quality", ["LOSSLESS"])[0]
+                .upper()
+            )
+
+            if quality != "LOSSLESS":
+                self.send_error(404)
+                return
 
             track = next(
                 (track for track in TRACKS if track["id"] == track_id),
@@ -77,12 +105,20 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_error(404)
                 return
 
-            self.send_json({
-                "url": f"http://127.0.0.1:8765/audio/{track_id}",
-                "format": track["format"],
-                "manifest": "none",
-                "encrypted": False,
-            })
+            self.send_json(
+                {
+                    "url": f"http://127.0.0.1:8765/audio/{track_id}",
+                    "format": track["format"],
+                    "quality": "LOSSLESS",
+                    "codec": track["codec"],
+                    "container": track["container"],
+                    "manifest": "none",
+                    "encrypted": False,
+                    "sampleRate": track["sampleRate"],
+                    "bitDepth": track["bitDepth"],
+                    "bitrate": track["bitrate"],
+                }
+            )
             return
 
         if route.startswith("/audio/"):
@@ -108,7 +144,10 @@ class Handler(BaseHTTPRequestHandler):
                 status = 200
 
                 if range_header:
-                    if not range_header.startswith("bytes=") or "," in range_header:
+                    if (
+                        not range_header.startswith("bytes=")
+                        or "," in range_header
+                    ):
                         self.send_response(416)
                         self.send_header(
                             "Content-Range",
