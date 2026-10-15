@@ -97,16 +97,79 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_error(404)
                 return
 
+            path = track["path"]
+
             try:
-                with track["path"].open("rb") as audio_file:
-                    data = audio_file.read()
+                file_size = path.stat().st_size
+                range_header = self.headers.get("Range")
+
+                start = 0
+                end = file_size - 1
+                status = 200
+
+                if range_header:
+                    if not range_header.startswith("bytes=") or "," in range_header:
+                        self.send_response(416)
+                        self.send_header(
+                            "Content-Range",
+                            f"bytes */{file_size}",
+                        )
+                        self.end_headers()
+                        return
+
+                    try:
+                        start_text, end_text = range_header[6:].split("-", 1)
+
+                        if not start_text:
+                            length = int(end_text)
+                            if length <= 0:
+                                raise ValueError
+                            start = max(0, file_size - length)
+                        else:
+                            start = int(start_text)
+                            if start < 0:
+                                raise ValueError
+
+                            if end_text:
+                                end = int(end_text)
+
+                        if start >= file_size or start > end:
+                            raise ValueError
+
+                        end = min(end, file_size - 1)
+
+                    except ValueError:
+                        self.send_response(416)
+                        self.send_header(
+                            "Content-Range",
+                            f"bytes */{file_size}",
+                        )
+                        self.end_headers()
+                        return
+
+                    status = 206
+
+                length = end - start + 1
+
+                with path.open("rb") as audio_file:
+                    audio_file.seek(start)
+                    data = audio_file.read(length)
+
             except OSError:
                 self.send_error(404)
                 return
 
-            self.send_response(200)
-            self.send_header("Content-Type", get_content_type(track["path"]))
+            self.send_response(status)
+            self.send_header("Content-Type", get_content_type(path))
             self.send_header("Content-Length", str(len(data)))
+            self.send_header("Accept-Ranges", "bytes")
+
+            if status == 206:
+                self.send_header(
+                    "Content-Range",
+                    f"bytes {start}-{end}/{file_size}",
+                )
+
             self.end_headers()
             self.wfile.write(data)
             return
