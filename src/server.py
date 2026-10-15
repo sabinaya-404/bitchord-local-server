@@ -1,11 +1,13 @@
-
 import json
+from src.config import load_config
+from src.scanner import scan_music
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 MANIFEST_PATH = Path(__file__).with_name("manifest.json")
-TRACKS = []
+TRACKS = scan_music(load_config())
+print(f"Indexed {len(TRACKS)} tracks.")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -40,7 +42,12 @@ class Handler(BaseHTTPRequestHandler):
                 ]).casefold()
             ]
 
-            self.send_json({"tracks": tracks})
+            self.send_json({
+    "tracks": [
+        {key: value for key, value in track.items() if key != "path"}
+        for track in tracks
+    ]
+})
             return
 
         self.send_error(404)
