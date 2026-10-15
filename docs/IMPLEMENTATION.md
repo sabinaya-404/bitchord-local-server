@@ -2,18 +2,29 @@
 
 ## Project Initialization
 
-- Created the project directory.
-- Created a Python virtual environment at `.venv`.
-- Created the `docs` directory.
-- Verified that the virtual environment's Python executable exists and runs from the project directory.
+- Created the project directory and Python virtual environment.
+- Created the documentation directory.
+- Initialized Git and committed the initial project files.
+- Documented the planned architecture for the open-source BitChord add-on.
 
-### Verification
+## Environment
 
-- `Test-Path ".\.venv\Scripts\python.exe"` returned `True`.
-- Python executable resolved to `.venv\Scripts\python.exe`.
+- Operating system: Windows 11
+- Python: 3.15.0
+- Virtual environment: `.venv`
+- Git: initialized
+- Dependencies: none installed yet
 
-### Pending
+## Verification
 
-- Confirm the Python version.
-- Initialize Git.
-- Implement the music server.
+- `.venv\Scripts\python.exe` exists and runs.
+- The Python executable reports version `3.15.0`.
+- `.venv` is excluded from Git tracking.
+- The architecture document has been committed.
+
+## Next
+
+- Verify the BitChord add-on protocol against available documentation and client behavior.
+- Finalize the music library configuration and metadata approach.
+- Implement and test the server incrementally.
+- Verify Tailscale remote access and original-audio streaming.
