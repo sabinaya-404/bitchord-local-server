@@ -1,29 +1,38 @@
 # References
 
-External sources used to guide implementation. Record the relevant section, URL, purpose, and date consulted for each source.
+Sources consulted for the project. Record the purpose, date, and verification status of each source.
 
-## BitChord Developer Documentation
+## BitChord Add-on Developer Guide
 
 - URL: https://bitchord.kushagrasingh.in/docs
-- Purpose: Verify the add-on protocol, manifest, search interface, stream resolution, metadata, and client requirements.
-- Status: Needs verification before implementation.
+- Consulted: 2026-10-15
+- Purpose: Add-on manifest, search and stream endpoints, track metadata, quality negotiation, and playback requirements.
+- Status: Initial protocol reference. Must be tested against the installed BitChord client before implementation is considered compatible.
+
+## Tailscale Serve Documentation
+
+- URL: https://tailscale.com/docs/features/tailscale-serve
+- Consulted: 2026-10-15
+- Purpose: Private HTTPS access to the local Python server from devices in the same tailnet.
+- Status: Official documentation reviewed. Integration with BitChord remains untested.
+
+## Tailscale CLI Reference
+
+- URL: https://tailscale.com/docs/reference/tailscale-cli/serve
+- Consulted: 2026-10-15
+- Purpose: Configure, inspect, and manage Tailscale Serve.
+- Status: Official documentation reviewed. Commands will be verified on the target Windows machine before deployment.
 
 ## Python HTTP Server Documentation
 
 - URL: https://docs.python.org/3/library/http.server.html
-- Purpose: Understand the standard-library HTTP server and its limitations.
-- Status: Reference for server design and security review.
-
-## Cloudflare Tunnel Documentation
-
-- URL: https://developers.cloudflare.com/tunnel/get-started/
-- Purpose: Investigate publishing a local service through a public hostname.
-- Status: Candidate remote-access option; suitability for audio streaming must be checked.
+- Consulted: 2026-10-15
+- Purpose: Understand standard-library HTTP server behavior and security limitations.
+- Status: Reference reviewed. The final server design must account for filesystem access, request validation, and safe response handling.
 
 ## Reference Maintenance
 
-- Add sources when they are actually consulted.
-- Link to the specific relevant documentation page or repository section where possible.
-- Record the date consulted.
-- Distinguish verified facts from assumptions.
-- Do not mark an implementation or hosting choice as verified until it has been tested.
+- Record sources when they are actually consulted.
+- Prefer official documentation and specific relevant pages.
+- Distinguish documented behavior from locally tested behavior.
+- Never claim compatibility or security has been verified until it has been tested.
