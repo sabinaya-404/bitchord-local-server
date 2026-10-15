@@ -3,11 +3,12 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from src.config import load_config
+from src.config import load_settings
 from src.scanner import scan_music
 
 MANIFEST_PATH = Path(__file__).with_name("manifest.json")
-TRACKS = scan_music(load_config())
+SETTINGS = load_settings()
+TRACKS = scan_music(SETTINGS["music_dirs"])
 print(f"Indexed {len(TRACKS)} tracks.")
 
 
@@ -107,7 +108,7 @@ class Handler(BaseHTTPRequestHandler):
 
             self.send_json(
                 {
-                    "url": f"http://127.0.0.1:8765/audio/{track_id}",
+                    "url": f"{SETTINGS['base_url']}/audio/{track_id}",
                     "format": track["format"],
                     "quality": "LOSSLESS",
                     "codec": track["codec"],
@@ -217,8 +218,11 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    server = HTTPServer(("127.0.0.1", 8765), Handler)
-    print("Local Music server: http://127.0.0.1:8765")
+    server = HTTPServer(
+    (SETTINGS["host"], SETTINGS["port"]),
+    Handler,
+)
+    print(f"Local Music server: {SETTINGS['base_url']}")
 
     try:
         server.serve_forever()
