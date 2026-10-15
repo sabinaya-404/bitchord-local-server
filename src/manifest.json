@@ -1,0 +1,8 @@
+{
+    "id" : "dev.sabinaya.local-music",
+    "name": "Local Music",
+    "version": "0.1.0",
+    "resources": ["search", "stream"],
+    "allowDownloads": 0,
+    "checkValidLossless": 0
+}
