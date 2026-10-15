@@ -15,16 +15,30 @@
 - Git: initialized
 - Dependencies: none installed yet
 
-## Verification
+## Manifest Server
 
-- `.venv\Scripts\python.exe` exists and runs.
-- The Python executable reports version `3.15.0`.
-- `.venv` is excluded from Git tracking.
-- The architecture document has been committed.
+- Added `src/manifest.json` with the initial add-on metadata.
+- Added `src/server.py` using Python's standard-library HTTP server.
+- `GET /manifest.json` returns the manifest as JSON.
+- Unknown paths return HTTP 404.
+- The server listens on `127.0.0.1:8765`, restricting access to the local machine.
+- No external Python dependencies are required.
 
-## Next
+### Verification
 
-- Verify the BitChord add-on protocol against available documentation and client behavior.
-- Finalize the music library configuration and metadata approach.
-- Implement and test the server incrementally.
-- Verify Tailscale remote access and original-audio streaming.
+- Confirmed the server starts successfully after correcting two typos.
+- Confirmed the manifest endpoint returns the expected JSON.
+- Confirmed an unknown route returns HTTP 404.
+
+### Current Limitations
+
+- BitChord v1.8 compatibility has not been fully verified.
+- Search and audio streaming are not implemented.
+- HTTP Range support and lossless playback are untested.
+- Tailscale remote access has not been configured or tested.
+
+### Next
+
+- Verify the expected search response against BitChord.
+- Implement and test the search endpoint.
+- Continue implementing one feature at a time, committing each verified change.

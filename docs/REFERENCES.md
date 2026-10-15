@@ -36,3 +36,10 @@ Sources consulted for the project. Record the purpose, date, and verification st
 - Prefer official documentation and specific relevant pages.
 - Distinguish documented behavior from locally tested behavior.
 - Never claim compatibility or security has been verified until it has been tested.
+
+## Reference Add-on Implementation
+
+- Repository: https://github.com/rairulyle/bitchord-selfhosted-addon
+- Consulted: 2026-10-15
+- Purpose: Inspect manifest handling, search and stream routes, media URL resolution, HTTP Range forwarding, and response headers.
+- Status: Used as a protocol and implementation reference only. Its backend architecture is not part of this project's design. Compatibility with BitChord v1.8 remains unverified.
