@@ -1,2 +1,4 @@
-Environnment Files
-.venv
+.venv/
+__pycache__/
+*.py[cod]
+config.json
