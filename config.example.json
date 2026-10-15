@@ -1,5 +1,8 @@
 {
-    "music_dirs" : [
-        "~/Music"
-    ]
+  "music_dirs": [
+    "~/Music"
+  ],
+  "host": "127.0.0.1",
+  "port": 8765,
+  "base_url": "http://127.0.0.1:8765"
 }
