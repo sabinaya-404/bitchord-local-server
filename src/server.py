@@ -11,6 +11,14 @@ SETTINGS = load_settings()
 TRACKS = scan_music(SETTINGS["music_dirs"])
 print(f"Indexed {len(TRACKS)} tracks.")
 
+# Maximum number of search results to return
+MAX_SEARCH_RESULTS = 50
+
+
+def get_track_by_id(track_id):
+    """Find a track by its ID, or return None if not found."""
+    return next((track for track in TRACKS if track["id"] == track_id), None)
+
 
 def get_content_type(path):
     return {
@@ -25,6 +33,8 @@ def get_content_type(path):
 
 
 class Handler(BaseHTTPRequestHandler):
+    command = None
+
     def send_json(self, data, status=200):
         body = json.dumps(data).encode("utf-8")
 
@@ -33,9 +43,22 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
     def log_message(self, format, *args):
         ua = self.headers.get("User-Agent", "-")
         print(f"{self.log_date_time_string()} {format % args} | UA: {ua}")
+
+    def send_response(self, code, message=None):
+        self._status_code = code
+        self.log_request(code)
+        self.send_response_only(code, message)
+        self.send_header("Date", self.date_time_string())
+
+    def send_header(self, keyword, value):
+        if not hasattr(self, "headers_sent"):
+            self.headers_sent = {}
+        self.headers_sent[keyword] = value
+        super().send_header(keyword, value)
     def do_GET(self):
         request = urlsplit(self.path)
         route = request.path
@@ -66,6 +89,9 @@ class Handler(BaseHTTPRequestHandler):
                 ).casefold()
             ]
 
+            # Limit search results to prevent excessively large responses
+            limited_tracks = tracks[:MAX_SEARCH_RESULTS]
+
             self.send_json(
                 {
                     "tracks": [
@@ -81,7 +107,7 @@ class Handler(BaseHTTPRequestHandler):
                                 else "HIGH"
                             ),
                         }
-                        for track in tracks
+                        for track in limited_tracks
                     ]
                 }
             )
@@ -99,11 +125,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_error(404)
                 return
 
-            track = next(
-                (track for track in TRACKS if track["id"] == track_id),
-                None,
-            )
-
+            track = get_track_by_id(track_id)
             if track is None:
                 self.send_error(404)
                 return
@@ -127,11 +149,7 @@ class Handler(BaseHTTPRequestHandler):
         if route.startswith("/audio/"):
             track_id = route.removeprefix("/audio/")
 
-            track = next(
-                (track for track in TRACKS if track["id"] == track_id),
-                None,
-            )
-
+            track = get_track_by_id(track_id)
             if track is None:
                 self.send_error(404)
                 return

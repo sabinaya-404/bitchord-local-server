@@ -1,7 +1,10 @@
 import hashlib
+import logging
 from pathlib import Path
 
 from mutagen import File as AudioFile
+
+TRACK_ID_LENGTH = 16
 
 
 AUDIO_EXTENSIONS = {
@@ -53,7 +56,7 @@ def scan_music(music_dirs):
 
                 track_id = hashlib.sha256(
                     str(path.resolve()).casefold().encode("utf-8")
-                ).hexdigest()[:16]
+                ).hexdigest()[:TRACK_ID_LENGTH]
 
                 tracks.append(
                     {
@@ -72,7 +75,8 @@ def scan_music(music_dirs):
                     }
                 )
 
-            except (OSError, ValueError, TypeError, KeyError):
+            except (OSError, ValueError, TypeError, KeyError) as e:
+                logging.warning(f"Skipping unreadable music file {path}: {e}")
                 continue
 
     return tracks
