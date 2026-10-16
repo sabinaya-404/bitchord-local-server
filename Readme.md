@@ -13,7 +13,7 @@ Each user runs their own server, configures their own music folders, and connect
 - Lossless stream metadata implemented for supported FLAC tracks.
 - Configurable host, port, music directories, and advertised base URL implemented.
 - Manual testing of manifest, search, stream metadata, and FLAC playback from an Android phone over Tailscale completed.
-- BitChord client integration has not yet been verified.
+- BitChord Android integration and playback verified over Tailscale.
 
 ## Requirements
 
@@ -25,28 +25,67 @@ Each user runs their own server, configures their own music folders, and connect
 
 ## Setup
 
-1. Create a virtual environment:
+## Setup
 
-   ```powershell
-   python -m venv .venv
-   .\.venv\Scripts\Activate.ps1
-   ```
+### 1. Get the project ready
 
-2. Install dependencies:
+From the project root, create and activate a virtual environment, then install dependencies:
 
-   ```powershell
-   python -m pip install -r requirements.txt
-   ```
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+```
 
-3. Copy `config.example.json` to `config.json` and edit the settings.
+### 2. Configure your music library
 
-4. Start the server from the project root:
+Copy the example configuration:
 
-   ```powershell
-   python -m src.server
-   ```
+```powershell
+Copy-Item config.example.json config.json
+```
 
-5. Open `http://127.0.0.1:8765/manifest.json` on the host to verify the manifest.
+Edit `config.json` and set `music_dirs` to folders that contain your music. For example:
+
+```json
+{
+  "music_dirs": [
+    "~/Music",
+    "D:/Music"
+  ],
+  "host": "127.0.0.1",
+  "port": 8765,
+  "base_url": "http://127.0.0.1:8765"
+}
+```
+
+Replace the example folders with your own. Keep `host` set to `127.0.0.1` for local access or when using Tailscale Serve.
+
+### 3. Start the server
+
+Run this from the project root:
+
+```powershell
+python -m src.server
+```
+
+Keep the terminal open while using the add-on.
+
+### 4. Verify the server
+
+Open this URL on the host computer:
+
+`http://127.0.0.1:8765/manifest.json`
+
+You should receive the add-on manifest as JSON.
+
+### 5. Connect BitChord
+
+For local access, the default `base_url` is suitable when the BitChord client can reach the host using that address.
+
+For private Android access, configure Tailscale on both devices and use Tailscale Serve to provide HTTPS access to the local server. Change `base_url` to your own Tailscale Serve HTTPS URL, such as `https://your-machine.your-tailnet.ts.net`. Do not copy another user's hostname.
+
+The server has no authentication. Keep access private and do not expose it directly to the public internet or use Tailscale Funnel.
 
 ## Configuration
 
@@ -57,9 +96,11 @@ Each user runs their own server, configures their own music folders, and connect
 - `port`: server port.
 - `base_url`: HTTP base URL advertised in stream metadata. It must be reachable by the BitChord client.
 
-For remote testing over Tailscale, both devices must be connected to the same tailnet. The server can listen on `0.0.0.0`, while `base_url` uses the host's Tailscale IP and port. Use your own address; never copy another user's address from this repository.
+For private remote access, connect both devices to your own Tailscale network. You can use Tailscale Serve to provide HTTPS access to the local Python server.
 
-The current direct Tailscale setup uses HTTP between the phone and Python server. Keep it restricted to your private tailnet and firewall rules. Do not expose this server directly to the public internet.
+Keep the Python server bound to `127.0.0.1` when using a local Tailscale Serve proxy. Set `base_url` to your own Tailscale Serve HTTPS URL, without copying another user's hostname.
+
+The server has no user authentication. Keep access restricted to your trusted private network, and do not expose it directly to the public internet.
 
 ## Endpoints
 
@@ -77,7 +118,7 @@ Manual tests completed:
 - Stream metadata returned FLAC format, LOSSLESS quality, codec, sample rate, bit depth, bitrate, and an absolute audio URL.
 - An audio URL returned playable FLAC audio in the phone's browser over Tailscale.
 
-Automated tests have not been added yet. BitChord client integration, client seeking behavior, and broader format compatibility remain to be verified.
+Automated tests have not been added yet. BitChord Android search and playback have been manually verified. Client seeking behavior and broader format compatibility remain to be verified.
 
 ## Documentation
 
