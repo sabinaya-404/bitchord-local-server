@@ -33,7 +33,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
-
+    def log_message(self, format, *args):
+        ua = self.headers.get("User-Agent", "-")
+        print(f"{self.log_date_time_string()} {format % args} | UA: {ua}")
     def do_GET(self):
         request = urlsplit(self.path)
         route = request.path
