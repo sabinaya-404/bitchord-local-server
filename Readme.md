@@ -25,8 +25,6 @@ Each user runs their own server, configures their own music folders, and connect
 
 ## Setup
 
-## Setup
-
 ### 1. Get the project ready
 
 From the project root, create and activate a virtual environment, then install dependencies:
