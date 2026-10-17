@@ -32,6 +32,28 @@ def get_content_type(path):
     }.get(path.suffix.lower(), "application/octet-stream")
 
 
+def _is_path_under_music_dirs(path):
+    """Check if an absolute path is under any of the configured music directories.
+    Resolves symlinks to prevent directory traversal via symlinks.
+    """
+    try:
+        resolved_path = path.resolve()
+    except (OSError, ValueError):
+        # If we cannot resolve the path, treat as not allowed
+        return False
+    music_dirs = SETTINGS.get("music_dirs", [])
+    for music_dir in music_dirs:
+        try:
+            resolved_music_dir = music_dir.resolve()
+            # Check if resolved_path is under resolved_music_dir
+            if resolved_music_dir in resolved_path.parents or resolved_music_dir == resolved_path:
+                return True
+        except (OSError, ValueError):
+            # If we cannot resolve a music directory, skip it
+            continue
+    return False
+
+
 class Handler(BaseHTTPRequestHandler):
     command = None
 
@@ -151,6 +173,10 @@ class Handler(BaseHTTPRequestHandler):
 
             track = get_track_by_id(track_id)
             if track is None:
+                self.send_error(404)
+                return
+
+            if not _is_path_under_music_dirs(track["path"]):
                 self.send_error(404)
                 return
 

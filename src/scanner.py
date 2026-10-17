@@ -2,7 +2,7 @@ import hashlib
 import logging
 from pathlib import Path
 
-from mutagen import File as AudioFile
+from tinytag import TinyTag
 
 TRACK_ID_LENGTH = 16
 
@@ -18,8 +18,6 @@ AUDIO_EXTENSIONS = {
     ".wma",
     ".aiff",
     ".aif",
-    ".ape",
-    ".wv",
 }
 
 
@@ -40,19 +38,20 @@ def scan_music(music_dirs):
                 continue
 
             try:
-                audio = AudioFile(path, easy=True)
-
-                if audio is None or audio.info is None:
+                tag = TinyTag.get(path, tags=True, duration=True, image=False)
+                if tag is None:
                     continue
 
-                title = get_tag(audio, "title", path.stem)
-                artist = get_tag(audio, "artist", "Unknown Artist")
-                album = get_tag(audio, "album", "Unknown Album")
-                duration = audio.info.length
-                codec = path.suffix[1:].lower()
-                sample_rate = getattr(audio.info, "sample_rate", None)
-                bit_depth = getattr(audio.info, "bits_per_sample", None)
-                bitrate = getattr(audio.info, "bitrate", None)
+                title = tag.title or path.stem
+                artist = tag.artist or "Unknown Artist"
+                album = tag.album or "Unknown Album"
+                duration = round(tag.duration) if tag.duration is not None else 0
+                format_ = path.suffix[1:].lower()
+                codec = format_
+                container = format_
+                sample_rate = tag.samplerate
+                bit_depth = tag.bitdepth
+                bitrate = int(tag.bitrate * 1000) if tag.bitrate is not None else None
 
                 track_id = hashlib.sha256(
                     str(path.resolve()).casefold().encode("utf-8")
@@ -64,10 +63,10 @@ def scan_music(music_dirs):
                         "title": title,
                         "artist": artist,
                         "album": album,
-                        "duration": round(duration),
-                        "format": path.suffix[1:].lower(),
+                        "duration": duration,
+                        "format": format_,
                         "codec": codec,
-                        "container": path.suffix[1:].lower(),
+                        "container": container,
                         "sampleRate": sample_rate,
                         "bitDepth": bit_depth,
                         "bitrate": bitrate,

@@ -12,6 +12,7 @@ Each user runs their own server, configures their own music folders, and connect
 - HTTP byte-range requests implemented.
 - Lossless stream metadata implemented for supported FLAC tracks.
 - Configurable host, port, music directories, and advertised base URL implemented.
+- Supported audio formats: .mp3, .flac, .m4a, .aac, .ogg, .opus, .wav, .wma, .aiff, .aif
 - Manual testing of manifest, search, stream metadata, and FLAC playback from an Android phone over Tailscale completed.
 - BitChord Android integration and playback verified over Tailscale.
 

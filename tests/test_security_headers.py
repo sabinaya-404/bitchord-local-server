@@ -107,6 +107,13 @@ class TestSecurityHeaders(unittest.TestCase):
             f.write(b"abcdefghij" * 10)  # 100 bytes
             temp_path = Path(f.name)
 
+        # Backup original SETTINGS and update music_dirs to include the temporary file's directory
+        original_settings = server.SETTINGS.copy()
+        server.SETTINGS = {
+            **server.SETTINGS,
+            "music_dirs": list(server.SETTINGS["music_dirs"]) + [Path(temp_path.parent).expanduser()]
+        }
+
         mock_track = {
             "id": "sec02-track",
             "title": "SEC02 Track",
@@ -164,6 +171,8 @@ class TestSecurityHeaders(unittest.TestCase):
             self.assertEqual(headers.get("Content-Range"), "bytes */100")
         finally:
             server.TRACKS = orig_tracks
+            # Restore original SETTINGS
+            server.SETTINGS = original_settings
             try:
                 temp_path.unlink()
             except OSError:

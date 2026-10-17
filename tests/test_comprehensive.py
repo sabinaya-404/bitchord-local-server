@@ -15,31 +15,31 @@ class MockHTTPRequest:
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-# Import modules - we'll handle mutagen availability in tests
+# Import modules - we'll handle tag availability in tests
 try:
     from scanner import scan_music, get_tag
     import server
-    MUTAGEN_AVAILABLE = True
+    TAG_AVAILABLE = True
 except ImportError:
-    MUTAGEN_AVAILABLE = False
+    TAG_AVAILABLE = False
     scan_music = None
     get_tag = None
     server = None
 
 
 class TestConstantsAndHelpers(unittest.TestCase):
-    """Test constants and helper functions that don't require mutagen."""
+    """Test constants and helper functions that don't require the tag library."""
 
     def test_search_limit_constant_exists(self):
         """Test that MAX_SEARCH_RESULTS constant is defined."""
-        if MUTAGEN_AVAILABLE:
+        if TAG_AVAILABLE:
             self.assertTrue(hasattr(server, 'MAX_SEARCH_RESULTS'))
             self.assertIsInstance(server.MAX_SEARCH_RESULTS, int)
             self.assertGreater(server.MAX_SEARCH_RESULTS, 0)
 
     def test_track_id_length_constant_exists(self):
         """Test that TRACK_ID_LENGTH constant is defined in scanner."""
-        if MUTAGEN_AVAILABLE:
+        if TAG_AVAILABLE:
             import scanner
             self.assertTrue(hasattr(scanner, 'TRACK_ID_LENGTH'))
             self.assertIsInstance(scanner.TRACK_ID_LENGTH, int)
@@ -47,7 +47,7 @@ class TestConstantsAndHelpers(unittest.TestCase):
 
     def test_get_track_by_id_function_exists(self):
         """Test that get_track_byid helper function exists."""
-        if MUTAGEN_AVAILABLE:
+        if TAG_AVAILABLE:
             self.assertTrue(hasattr(server, 'get_track_by_id'))
             # Check that it's callable
             self.assertTrue(callable(server.get_track_by_id))
@@ -84,8 +84,8 @@ class TestSearchLogic(unittest.TestCase):
 
     def test_search_result_limiting_logic(self):
         """Test the logic for limiting search results."""
-        if not MUTAGEN_AVAILABLE:
-            self.skipTest("Mutagen not available")
+        if not TAG_AVAILABLE:
+            self.skipTest("Tag not available")
 
         # Simulate having more results than the limit
         many_tracks = []
@@ -119,8 +119,8 @@ class TestSearchLogic(unittest.TestCase):
 
     def test_search_case_insensitive_matching(self):
         """Test that search matching is case insensitive."""
-        if not MUTAGEN_AVAILABLE:
-            self.skipTest("Mutagen not available")
+        if not TAG_AVAILABLE:
+            self.skipTest("Tag not available")
 
         query = "SONG"
         matches = [
@@ -137,8 +137,8 @@ class TestSearchLogic(unittest.TestCase):
 
     def test_search_partial_matching(self):
         """Test that search finds partial matches."""
-        if not MUTAGEN_AVAILABLE:
-            self.skipTest("Mutagen not available")
+        if not TAG_AVAILABLE:
+            self.skipTest("Tag not available")
 
         # Search for "one" should match "Song One"
         query = "one"
@@ -172,8 +172,8 @@ class TestSearchLogic(unittest.TestCase):
 
     def test_search_handler_limits_results(self):
         """Test that Handler's /search route actually limits results to MAX_SEARCH_RESULTS."""
-        if not MUTAGEN_AVAILABLE:
-            self.skipTest("Mutagen not available")
+        if not TAG_AVAILABLE:
+            self.skipTest("Tag not available")
 
         many_tracks = [
             {
@@ -207,8 +207,8 @@ class TestSearchLogic(unittest.TestCase):
 
     def test_search_handler_empty_query_returns_empty_list(self):
         """Test that Handler's /search route with empty or whitespace query returns empty list."""
-        if not MUTAGEN_AVAILABLE:
-            self.skipTest("Mutagen not available")
+        if not TAG_AVAILABLE:
+            self.skipTest("Tag not available")
 
         for query_param in ["", "q=", "q=%20%20"]:
             with self.subTest(query=query_param):
@@ -221,17 +221,17 @@ class TestImportAndBasicStructure(unittest.TestCase):
 
     def test_scanner_can_be_imported(self):
         """Test that scanner module can be imported."""
-        # This test will pass if mutagen is available, otherwise we skip
-        if MUTAGEN_AVAILABLE:
+        # This test will pass if tag is available, otherwise we skip
+        if TAG_AVAILABLE:
             import scanner
             self.assertTrue(hasattr(scanner, 'scan_music'))
             self.assertTrue(hasattr(scanner, 'get_tag'))
         else:
-            self.skipTest("Mutagen not available")
+            self.skipTest("Tag not available")
 
     def test_server_can_be_imported(self):
         """Test that server module can be imported."""
-        if MUTAGEN_AVAILABLE:
+        if TAG_AVAILABLE:
             import server
             self.assertTrue(hasattr(server, 'SETTINGS'))
             self.assertTrue(hasattr(server, 'TRACKS'))
@@ -239,11 +239,11 @@ class TestImportAndBasicStructure(unittest.TestCase):
             self.assertTrue(hasattr(server, 'get_track_by_id'))
             self.assertTrue(hasattr(server, 'MAX_SEARCH_RESULTS'))
         else:
-            self.skipTest("Mutagen not available")
+            self.skipTest("Tag not available")
 
     def test_get_tag_function_exists(self):
         """Test that get_tag function exists and works."""
-        if MUTAGEN_AVAILABLE:
+        if TAG_AVAILABLE:
             from scanner import get_tag
             # Test basic functionality
             tags = {"title": ["Test Song"]}
@@ -260,7 +260,90 @@ class TestImportAndBasicStructure(unittest.TestCase):
             result = get_tag(tags, "title", "Fallback")
             self.assertEqual(result, "Fallback")
         else:
-            self.skipTest("Mutagen not available")
+            self.skipTest("Tag not available")
+
+
+class TestSymlinkProtection(unittest.TestCase):
+    """Test symlink protection function."""
+
+    def setUp(self):
+        """Backup original SETTINGS."""
+        self.original_settings = server.SETTINGS.copy()
+
+    def tearDown(self):
+        """Restore original SETTINGS."""
+        server.SETTINGS = self.original_settings
+
+    def test_path_under_music_dirs_returns_true(self):
+        """Test that a path under a music directory returns True."""
+        # Create a temporary directory inside the first music directory
+        import tempfile
+        from pathlib import Path
+        music_dirs = server.SETTINGS.get("music_dirs", [])
+        if not music_dirs:
+            self.skipTest("No music directories configured")
+        # Use the first music directory
+        base_dir = music_dirs[0]
+        with tempfile.TemporaryDirectory(dir=base_dir) as tmpdir:
+            test_path = Path(tmpdir) / "test.mp3"
+            test_path.touch()
+            self.assertTrue(server._is_path_under_music_dirs(test_path))
+
+    def test_path_outside_music_dirs_returns_false(self):
+        """Test that a path outside all music directories returns False."""
+        # Create a temporary directory in a temporary location (not under any music dir)
+        import tempfile
+        from pathlib import Path
+        # We'll create a temp dir in the system temp, which is unlikely to be under music dirs
+        with tempfile.TemporaryDirectory() as tmpdir:
+            test_path = Path(tmpdir) / "test.mp3"
+            test_path.touch()
+            # Ensure the test path is not under any music directory (by construction)
+            music_dirs = server.SETTINGS.get("music_dirs", [])
+            under_any = any(
+                test_path.resolve().is_relative_to(music_dir.resolve())
+                for music_dir in music_dirs
+            )
+            # If by chance it is under, we skip the assertion (but we can still test the function)
+            # We'll just assert that the function returns False; if it's actually under, the test may fail.
+            # To avoid false failure, we can check and skip if under.
+            if under_any:
+                self.skipTest("Temporary directory accidentally under a music directory")
+            self.assertFalse(server._is_path_under_music_dirs(test_path))
+
+    def test_symlink_outside_music_dirs_returns_false(self):
+        """Test that a symlink pointing outside music directories returns False."""
+        import tempfile
+        import os
+        from pathlib import Path
+        music_dirs = server.SETTINGS.get("music_dirs", [])
+        if not music_dirs:
+            self.skipTest("No music directories configured")
+        # Create a temporary directory outside music dirs
+        with tempfile.TemporaryDirectory() as tmpdir:
+            outside_dir = Path(tmpdir)
+            # Create a symlink inside the first music directory pointing to outside_dir
+            link_path = music_dirs[0] / "symlink_outside"
+            try:
+                os.symlink(outside_dir, link_path)
+            except OSError as e:
+                # On Windows, creating symlinks may require special privileges.
+                # Skip the test if we cannot create a symlink.
+                self.skipTest(f"Cannot create symlink: {e}")
+            try:
+                # The symlink itself is under the music directory, but its target is outside.
+                # The function should resolve the symlink and check the target.
+                # We'll test the path of a file inside the symlink directory.
+                test_file = link_path / "test.mp3"
+                test_file.touch()
+                # The resolved path will be outside_dir/test.mp3, which is outside music dirs.
+                self.assertFalse(server._is_path_under_music_dirs(test_file))
+            finally:
+                if link_path.exists():
+                    try:
+                        link_path.unlink()
+                    except OSError:
+                        pass
 
 
 if __name__ == '__main__':
