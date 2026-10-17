@@ -7,7 +7,7 @@
 - Virtual environment: `.venv`.
 - Git repository initialized.
 - Server uses Python's standard-library HTTP server.
-- Music metadata extraction uses Mutagen.
+- Music metadata extraction uses TinyTag.
 - Dependencies are listed in `requirements.txt`.
 
 ## Implemented features
