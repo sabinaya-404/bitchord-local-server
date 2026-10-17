@@ -25,9 +25,20 @@ Each user runs their own server, configures their own music folders, and connect
 
 ## Setup
 
-### 1. Get the project ready
+### 1. Clone the repository
 
-From the project root, create and activate a virtual environment, then install dependencies:
+Clone the repository and enter the project directory:
+
+```bash
+git clone https://github.com/sabinaya-404/bitchord-local-server.git
+cd bitchord-local-server
+```
+
+### 2. Prepare the virtual environment
+
+#### Windows (PowerShell)
+
+Create a virtual environment, activate it, and install dependencies:
 
 ```powershell
 python -m venv .venv
@@ -35,12 +46,39 @@ python -m venv .venv
 python -m pip install -r requirements.txt
 ```
 
-### 2. Configure your music library
+> [!NOTE]
+> If PowerShell blocks script execution with an execution policy error, you can allow scripts for the current terminal session without permanently altering your system configuration:
+> ```powershell
+> Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process
+> .\.venv\Scripts\Activate.ps1
+> ```
+> Alternatively, you can skip script activation entirely by invoking the virtual environment's Python executable directly:
+> ```powershell
+> .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+> ```
+
+#### Linux / macOS
+
+Create a virtual environment, activate it, and install dependencies:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+```
+
+### 3. Configure your music library
 
 Copy the example configuration:
 
+**Windows (PowerShell):**
 ```powershell
 Copy-Item config.example.json config.json
+```
+
+**Linux / macOS:**
+```bash
+cp config.example.json config.json
 ```
 
 Edit `config.json` and set `music_dirs` to folders that contain your music. For example:
@@ -59,17 +97,25 @@ Edit `config.json` and set `music_dirs` to folders that contain your music. For 
 
 Replace the example folders with your own. Keep `host` set to `127.0.0.1` for local access or when using Tailscale Serve.
 
-### 3. Start the server
+### 4. Start the server
 
 Run this from the project root:
 
+**Windows (PowerShell):**
 ```powershell
 python -m src.server
 ```
+*(Or invoke directly: `.\.venv\Scripts\python.exe -m src.server`)*
+
+**Linux / macOS:**
+```bash
+python -m src.server
+```
+*(Or invoke directly: `./.venv/bin/python -m src.server`)*
 
 Keep the terminal open while using the add-on.
 
-### 4. Verify the server
+### 5. Verify the server
 
 Open this URL on the host computer:
 
@@ -77,7 +123,7 @@ Open this URL on the host computer:
 
 You should receive the add-on manifest as JSON.
 
-### 5. Connect BitChord
+### 6. Connect BitChord
 
 For local access, the default `base_url` is suitable when the BitChord client can reach the host using that address.
 
@@ -109,14 +155,37 @@ The server has no user authentication. Keep access restricted to your trusted pr
 
 ## Development verification
 
+### Automated tests
+
+The project includes unit test suites covering manifest validation, search limiting, RFC 9110 HTTP byte-range requests, and response header security:
+
+- `test_server.py`: verifies manifest JSON schema and required properties.
+- `tests/test_security_headers.py`: verifies suppression of the `Server` header and preservation of standard response headers (`Date`, `Content-Type`, `Content-Length`, `Connection`) across routes and errors.
+- `tests/test_range_handling.py`: verifies RFC 9110 HTTP byte-range request handling (normal ranges, open-ended, suffix, oversized suffix, out-of-bounds, invalid ranges, and empty files).
+- `tests/test_comprehensive.py`: verifies search query parsing, result limiting (`MAX_SEARCH_RESULTS`), case-insensitive matching, and helper functions.
+
+Run the test suites from the project root:
+
+```bash
+python -m unittest discover -s tests
+python -m unittest test_server.py
+```
+
+Or run all test modules in a single command:
+
+```bash
+python -m unittest tests.test_comprehensive tests.test_range_handling tests.test_security_headers test_server
+```
+
+### Manual verification
+
 Manual tests completed:
 
 - Manifest returned HTTP 200 and valid JSON from the laptop.
 - Search returned track data from the Android phone.
 - Stream metadata returned FLAC format, LOSSLESS quality, codec, sample rate, bit depth, bitrate, and an absolute audio URL.
 - An audio URL returned playable FLAC audio in the phone's browser over Tailscale.
-
-Automated tests have not been added yet. BitChord Android search and playback have been manually verified. Client seeking behavior and broader format compatibility remain to be verified.
+- BitChord Android integration and playback verified over Tailscale. Client seeking behavior and broader format compatibility remain to be verified.
 
 ## Documentation
 
