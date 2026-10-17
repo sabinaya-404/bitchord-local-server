@@ -164,17 +164,10 @@ The project includes unit test suites covering manifest validation, search limit
 - `tests/test_range_handling.py`: verifies RFC 9110 HTTP byte-range request handling (normal ranges, open-ended, suffix, oversized suffix, out-of-bounds, invalid ranges, and empty files).
 - `tests/test_comprehensive.py`: verifies search query parsing, result limiting (`MAX_SEARCH_RESULTS`), case-insensitive matching, and helper functions.
 
-Run the test suites from the project root:
+Run all tests from the project root:
 
 ```bash
-python -m unittest discover -s tests
-python -m unittest test_server.py
-```
-
-Or run all test modules in a single command:
-
-```bash
-python -m unittest tests.test_comprehensive tests.test_range_handling tests.test_security_headers test_server
+python -m unittest
 ```
 
 ### Manual verification
