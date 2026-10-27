@@ -79,3 +79,33 @@ def scan_music(music_dirs):
                 continue
 
     return tracks
+
+
+def get_artwork_for_track(track):
+    """Extract embedded artwork from an audio file on demand.
+    Returns (image_data: bytes, mime_type: str) or (None, None) if no artwork found.
+    """
+    path = track.get("path")
+    if not path or not path.exists():
+        return None, None
+
+    try:
+        tag = TinyTag.get(path, image=True)
+        if tag is None or tag.images is None:
+            return None, None
+
+        # Prefer front_cover, fall back to any available image
+        image = tag.images.front_cover or tag.images.any
+        if image is None or not image.data:
+            return None, None
+
+        mime_type = image.mime_type
+        if not mime_type:
+            # Fallback based on common formats
+            mime_type = "image/jpeg"
+
+        return image.data, mime_type
+
+    except (OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+        logging.warning(f"Failed to extract artwork for {path}: {e}")
+        return None, None

@@ -6,7 +6,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from src.config import load_settings
-from src.scanner import scan_music
+from src.scanner import scan_music, get_artwork_for_track
 
 MANIFEST_PATH = Path(__file__).with_name("manifest.json")
 SETTINGS = load_settings()
@@ -135,6 +135,9 @@ class Handler(BaseHTTPRequestHandler):
             # Limit search results to prevent excessively large responses
             limited_tracks = tracks[:MAX_SEARCH_RESULTS]
 
+            # Include artworkURL only when base_url is HTTPS (required by BitChord add-on contract)
+            base_url_https = SETTINGS["base_url"].startswith("https://")
+
             self.send_json(
                 {
                     "tracks": [
@@ -148,6 +151,11 @@ class Handler(BaseHTTPRequestHandler):
                                 "LOSSLESS"
                                 if track["format"] == "flac"
                                 else "HIGH"
+                            ),
+                            **(
+                                {"artworkURL": f"{SETTINGS['base_url']}/artwork/{track['id']}"}
+                                if base_url_https
+                                else {}
                             ),
                         }
                         for track in limited_tracks
@@ -279,6 +287,35 @@ class Handler(BaseHTTPRequestHandler):
 
             self.end_headers()
             self.wfile.write(data)
+            return
+
+        # Allowlist of image MIME types TinyTag can return (based on installed version)
+        _ARTWORK_MIME_TYPES = {"image/jpeg", "image/png", "image/gif", "image/bmp"}
+
+        if route.startswith("/artwork/"):
+            track_id = route.removeprefix("/artwork/")
+
+            track = get_track_by_id(track_id)
+            if track is None:
+                self.send_error(404)
+                return
+
+            image_data, mime_type = get_artwork_for_track(track)
+            if image_data is None:
+                self.send_error(404)
+                return
+
+            # Validate MIME type against allowlist; reject unsupported/malformed types
+            if mime_type not in _ARTWORK_MIME_TYPES:
+                logging.warning("Rejected unsupported artwork MIME type: %s", mime_type)
+                self.send_error(404)
+                return
+
+            self.send_response(200)
+            self.send_header("Content-Type", mime_type)
+            self.send_header("Content-Length", str(len(image_data)))
+            self.end_headers()
+            self.wfile.write(image_data)
             return
 
         self.send_error(404)
