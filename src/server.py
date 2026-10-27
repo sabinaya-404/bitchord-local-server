@@ -1,4 +1,6 @@
 import json
+import logging
+import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -14,10 +16,29 @@ print(f"Indexed {len(TRACKS)} tracks.")
 # Maximum number of search results to return
 MAX_SEARCH_RESULTS = 50
 
+# Lock for atomic track index replacement during refresh
+_TRACKS_LOCK = threading.Lock()
+
 
 def get_track_by_id(track_id):
     """Find a track by its ID, or return None if not found."""
     return next((track for track in TRACKS if track["id"] == track_id), None)
+
+
+def refresh_tracks():
+    """Scan music directories and atomically replace the track index.
+    Returns (success: bool, message: str, new_count: int).
+    """
+    global TRACKS
+    try:
+        new_tracks = scan_music(SETTINGS["music_dirs"])
+    except Exception as e:
+        logging.warning("Library refresh scan failed: %s", e)
+        return False, "Scan failed", 0
+
+    with _TRACKS_LOCK:
+        TRACKS = new_tracks
+    return True, "OK", len(new_tracks)
 
 
 def get_content_type(path):
@@ -258,6 +279,20 @@ class Handler(BaseHTTPRequestHandler):
 
             self.end_headers()
             self.wfile.write(data)
+            return
+
+        self.send_error(404)
+
+    def do_POST(self):
+        request = urlsplit(self.path)
+        route = request.path
+
+        if route == "/refresh":
+            success, message, count = refresh_tracks()
+            if success:
+                self.send_json({"status": "ok", "message": message, "tracks": count})
+            else:
+                self.send_json({"status": "error", "message": message}, status=500)
             return
 
         self.send_error(404)
