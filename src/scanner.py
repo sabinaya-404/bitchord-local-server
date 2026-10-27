@@ -70,6 +70,7 @@ def scan_music(music_dirs):
                         "sampleRate": sample_rate,
                         "bitDepth": bit_depth,
                         "bitrate": bitrate,
+                        "track": tag.track,
                         "path": path.resolve(),
                     }
                 )

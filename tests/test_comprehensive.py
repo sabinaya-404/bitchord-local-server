@@ -346,5 +346,167 @@ class TestSymlinkProtection(unittest.TestCase):
                         pass
 
 
+class TestScannerTrackField(unittest.TestCase):
+    """Test that scanner extracts track number metadata."""
+
+    def setUp(self):
+        """Backup original SETTINGS."""
+        self.original_settings = server.SETTINGS.copy()
+
+    def tearDown(self):
+        """Restore original SETTINGS."""
+        server.SETTINGS = self.original_settings
+
+    def test_scan_music_includes_track_field_when_present(self):
+        """Test that scan_music includes track field when track metadata exists."""
+        if not TAG_AVAILABLE:
+            self.skipTest("Tag not available")
+
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a test file
+            test_file = Path(tmpdir) / "test.mp3"
+            test_file.write_bytes(b"fake audio data")
+
+            # Scan the directory
+            tracks = scan_music([Path(tmpdir)])
+
+            # Should find the track
+            self.assertEqual(len(tracks), 1)
+            track = tracks[0]
+
+            # Track field should exist in the result
+            self.assertIn("track", track)
+            # Value should be None (no actual tags in fake file) or an int
+            self.assertTrue(track["track"] is None or isinstance(track["track"], int))
+
+    def test_scan_music_includes_track_field_when_absent(self):
+        """Test that scan_music includes track field even when metadata is absent."""
+        if not TAG_AVAILABLE:
+            self.skipTest("Tag not available")
+
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            test_file = Path(tmpdir) / "test.mp3"
+            test_file.write_bytes(b"fake audio data")
+
+            tracks = scan_music([Path(tmpdir)])
+
+            self.assertEqual(len(tracks), 1)
+            track = tracks[0]
+
+            # Track field should always be present
+            self.assertIn("track", track)
+            # Should be None when no track metadata in file
+            self.assertIsNone(track["track"])
+
+    def test_search_response_includes_track_field(self):
+        """Test that /search response includes track field from track data."""
+        if not TAG_AVAILABLE:
+            self.skipTest("Tag not available")
+
+        # Create mock track with track number
+        mock_track = {
+            "id": "test-track-id",
+            "title": "Test Track",
+            "artist": "Test Artist",
+            "album": "Test Album",
+            "format": "mp3",
+            "codec": "mp3",
+            "container": "mp3",
+            "sampleRate": 44100,
+            "bitDepth": 16,
+            "bitrate": 320,
+            "track": 5,
+            "path": Path("/music/test.mp3"),
+        }
+
+        orig_tracks = server.TRACKS
+        server.TRACKS = [mock_track]
+        try:
+            # Make a search request
+            handler = server.Handler(
+                request=MockHTTPRequest(),
+                client_address=("127.0.0.1", 8080),
+                server=Mock(),
+            )
+            handler.command = "GET"
+            handler.requestline = "GET /search?q=test HTTP/1.0"
+            handler.request_version = "HTTP/1.0"
+            handler.path = "/search?q=test"
+            handler.headers = {}
+            handler.wfile = BytesIO()
+            handler.do_GET()
+
+            body = handler.wfile.getvalue().split(b"\r\n\r\n", 1)[1]
+            data = json.loads(body.decode("utf-8"))
+
+            self.assertEqual(handler._status_code, 200)
+            self.assertIn("tracks", data)
+            self.assertEqual(len(data["tracks"]), 1)
+
+            # Track field should be in the response
+            response_track = data["tracks"][0]
+            self.assertIn("track", response_track)
+            self.assertEqual(response_track["track"], 5)
+        finally:
+            server.TRACKS = orig_tracks
+
+    def test_search_response_includes_track_field_none(self):
+        """Test that /search response includes track field as None when absent."""
+        if not TAG_AVAILABLE:
+            self.skipTest("Tag not available")
+
+        # Create mock track without track number
+        mock_track = {
+            "id": "test-track-id",
+            "title": "Test Track",
+            "artist": "Test Artist",
+            "album": "Test Album",
+            "format": "mp3",
+            "codec": "mp3",
+            "container": "mp3",
+            "sampleRate": 44100,
+            "bitDepth": 16,
+            "bitrate": 320,
+            "track": None,
+            "path": Path("/music/test.mp3"),
+        }
+
+        orig_tracks = server.TRACKS
+        server.TRACKS = [mock_track]
+        try:
+            handler = server.Handler(
+                request=MockHTTPRequest(),
+                client_address=("127.0.0.1", 8080),
+                server=Mock(),
+            )
+            handler.command = "GET"
+            handler.requestline = "GET /search?q=test HTTP/1.0"
+            handler.request_version = "HTTP/1.0"
+            handler.path = "/search?q=test"
+            handler.headers = {}
+            handler.wfile = BytesIO()
+            handler.do_GET()
+
+            body = handler.wfile.getvalue().split(b"\r\n\r\n", 1)[1]
+            data = json.loads(body.decode("utf-8"))
+
+            self.assertEqual(handler._status_code, 200)
+            self.assertIn("tracks", data)
+            self.assertEqual(len(data["tracks"]), 1)
+
+            # Track field should be in the response as None
+            response_track = data["tracks"][0]
+            self.assertIn("track", response_track)
+            self.assertIsNone(response_track["track"])
+        finally:
+            server.TRACKS = orig_tracks
+
+
 if __name__ == '__main__':
     unittest.main()
