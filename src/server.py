@@ -13,10 +13,8 @@ SETTINGS = load_settings()
 TRACKS = scan_music(SETTINGS["music_dirs"])
 print(f"Indexed {len(TRACKS)} tracks.")
 
-# Maximum number of search results to return
 MAX_SEARCH_RESULTS = 50
 
-# Lock for atomic track index replacement during refresh
 _TRACKS_LOCK = threading.Lock()
 
 
@@ -60,17 +58,14 @@ def _is_path_under_music_dirs(path):
     try:
         resolved_path = path.resolve()
     except (OSError, ValueError):
-        # If we cannot resolve the path, treat as not allowed
         return False
     music_dirs = SETTINGS.get("music_dirs", [])
     for music_dir in music_dirs:
         try:
             resolved_music_dir = music_dir.resolve()
-            # Check if resolved_path is under resolved_music_dir
             if resolved_music_dir in resolved_path.parents or resolved_music_dir == resolved_path:
                 return True
         except (OSError, ValueError):
-            # If we cannot resolve a music directory, skip it
             continue
     return False
 
@@ -289,7 +284,6 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(data)
             return
 
-        # Allowlist of image MIME types TinyTag can return (based on installed version)
         _ARTWORK_MIME_TYPES = {"image/jpeg", "image/png", "image/gif", "image/bmp"}
 
         if route.startswith("/artwork/"):
@@ -305,7 +299,6 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_error(404)
                 return
 
-            # Validate MIME type against allowlist; reject unsupported/malformed types
             if mime_type not in _ARTWORK_MIME_TYPES:
                 logging.warning("Rejected unsupported artwork MIME type: %s", mime_type)
                 self.send_error(404)

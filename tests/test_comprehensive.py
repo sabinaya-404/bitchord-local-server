@@ -11,11 +11,9 @@ class MockHTTPRequest:
     def makefile(self, mode="rb", bufsize=-1):
         return BytesIO(b"")
 
-# Add the src directory to the path so we can import modules
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-# Import modules - we'll handle tag availability in tests
 try:
     from scanner import scan_music, get_tag
     import server

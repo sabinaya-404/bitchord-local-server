@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 import tempfile
 import unittest
 from http.server import BaseHTTPRequestHandler
@@ -7,8 +8,6 @@ from io import BytesIO
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-# Add the src directory to the path so we can import modules
-import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 import server
