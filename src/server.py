@@ -1,7 +1,7 @@
 import json
 import logging
 import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
@@ -261,27 +261,49 @@ class Handler(BaseHTTPRequestHandler):
 
                 length = end - start + 1
 
-                with path.open("rb") as audio_file:
-                    audio_file.seek(start)
-                    data = audio_file.read(length)
+                # Open file first to validate it exists and is readable
+                audio_file = path.open("rb")
+                audio_file.seek(start)
 
             except OSError:
                 self.send_error(404)
                 return
 
-            self.send_response(status)
-            self.send_header("Content-Type", get_content_type(path))
-            self.send_header("Content-Length", str(len(data)))
-            self.send_header("Accept-Ranges", "bytes")
+            try:
+                self.send_response(status)
+                self.send_header("Content-Type", get_content_type(path))
+                self.send_header("Content-Length", str(length))
+                self.send_header("Accept-Ranges", "bytes")
 
-            if status == 206:
-                self.send_header(
-                    "Content-Range",
-                    f"bytes {start}-{end}/{file_size}",
-                )
+                if status == 206:
+                    self.send_header(
+                        "Content-Range",
+                        f"bytes {start}-{end}/{file_size}",
+                    )
 
-            self.end_headers()
-            self.wfile.write(data)
+                self.end_headers()
+
+                # Stream in 64 KB chunks
+                CHUNK_SIZE = 64 * 1024
+                remaining = length
+
+                try:
+                    while remaining > 0:
+                        chunk = audio_file.read(min(CHUNK_SIZE, remaining))
+                        if not chunk:
+                            break
+                        self.wfile.write(chunk)
+                        remaining -= len(chunk)
+                except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                    # Client disconnected - suppress traceback
+                    pass
+                finally:
+                    audio_file.close()
+
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                # Client disconnected before/during headers
+                audio_file.close()
+                return
             return
 
         _ARTWORK_MIME_TYPES = {"image/jpeg", "image/png", "image/gif", "image/bmp"}
@@ -329,10 +351,10 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    server = HTTPServer(
-    (SETTINGS["host"], SETTINGS["port"]),
-    Handler,
-)
+    server = ThreadingHTTPServer(
+        (SETTINGS["host"], SETTINGS["port"]),
+        Handler,
+    )
     print(f"Local Music server: {SETTINGS['base_url']}")
 
     try:
