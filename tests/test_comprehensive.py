@@ -506,5 +506,285 @@ class TestScannerTrackField(unittest.TestCase):
             server.TRACKS = orig_tracks
 
 
+class TestTrackQuality(unittest.TestCase):
+    """Test track_quality helper function."""
+
+    def setUp(self):
+        """Backup original SETTINGS."""
+        self.original_settings = server.SETTINGS.copy()
+
+    def tearDown(self):
+        """Restore original SETTINGS."""
+        server.SETTINGS = self.original_settings
+
+    def test_track_quality_flac_returns_lossless(self):
+        """Test that track_quality returns LOSSLESS for FLAC format."""
+        if not TAG_AVAILABLE:
+            self.skipTest("Tag not available")
+
+        mock_track = {"format": "flac"}
+        self.assertEqual(server.track_quality(mock_track), "LOSSLESS")
+
+    def test_track_quality_mp3_returns_high(self):
+        """Test that track_quality returns HIGH for MP3 format."""
+        if not TAG_AVAILABLE:
+            self.skipTest("Tag not available")
+
+        mock_track = {"format": "mp3"}
+        self.assertEqual(server.track_quality(mock_track), "HIGH")
+
+    def test_track_quality_wav_returns_high(self):
+        """Test that track_quality returns HIGH for WAV format."""
+        if not TAG_AVAILABLE:
+            self.skipTest("Tag not available")
+
+        mock_track = {"format": "wav"}
+        self.assertEqual(server.track_quality(mock_track), "HIGH")
+
+    def test_track_quality_aiff_returns_high(self):
+        """Test that track_quality returns HIGH for AIFF format."""
+        if not TAG_AVAILABLE:
+            self.skipTest("Tag not available")
+
+        mock_track = {"format": "aiff"}
+        self.assertEqual(server.track_quality(mock_track), "HIGH")
+
+    def test_track_quality_unknown_format_returns_high(self):
+        """Test that track_quality returns HIGH for unknown formats."""
+        if not TAG_AVAILABLE:
+            self.skipTest("Tag not available")
+
+        mock_track = {"format": "unknown"}
+        self.assertEqual(server.track_quality(mock_track), "HIGH")
+
+
+class TestSearchAudioQuality(unittest.TestCase):
+    """Test that /search returns correct audioQuality field."""
+
+    def setUp(self):
+        """Backup original SETTINGS and TRACKS."""
+        self.original_settings = server.SETTINGS.copy()
+        self.original_tracks = server.TRACKS
+
+    def tearDown(self):
+        """Restore original SETTINGS and TRACKS."""
+        server.SETTINGS = self.original_settings
+        server.TRACKS = self.original_tracks
+
+    def test_search_returns_audio_quality_lossless_for_flac(self):
+        """Test that search response includes LOSSLESS for FLAC tracks."""
+        if not TAG_AVAILABLE:
+            self.skipTest("Tag not available")
+
+        mock_track = {
+            "id": "flac-track",
+            "title": "FLAC Track",
+            "artist": "Test Artist",
+            "album": "Test Album",
+            "format": "flac",
+            "codec": "flac",
+            "container": "flac",
+            "sampleRate": 44100,
+            "bitDepth": 16,
+            "bitrate": 1000,
+            "path": Path("/music/test.flac"),
+        }
+
+        server.TRACKS = [mock_track]
+        handler = server.Handler(
+            request=MockHTTPRequest(),
+            client_address=("127.0.0.1", 8080),
+            server=Mock(),
+        )
+        handler.command = "GET"
+        handler.requestline = "GET /search?q=track HTTP/1.0"
+        handler.request_version = "HTTP/1.0"
+        handler.path = "/search?q=track"
+        handler.headers = {}
+        handler.wfile = BytesIO()
+        handler.do_GET()
+
+        body = handler.wfile.getvalue().split(b"\r\n\r\n", 1)[1]
+        data = json.loads(body.decode("utf-8"))
+
+        self.assertEqual(handler._status_code, 200)
+        self.assertIn("tracks", data)
+        self.assertEqual(len(data["tracks"]), 1)
+        self.assertEqual(data["tracks"][0]["audioQuality"], "LOSSLESS")
+
+    def test_search_returns_audio_quality_high_for_mp3(self):
+        """Test that search response includes HIGH for MP3 tracks."""
+        if not TAG_AVAILABLE:
+            self.skipTest("Tag not available")
+
+        mock_track = {
+            "id": "mp3-track",
+            "title": "MP3 Track",
+            "artist": "Test Artist",
+            "album": "Test Album",
+            "format": "mp3",
+            "codec": "mp3",
+            "container": "mp3",
+            "sampleRate": 44100,
+            "bitDepth": 16,
+            "bitrate": 320,
+            "path": Path("/music/test.mp3"),
+        }
+
+        server.TRACKS = [mock_track]
+        handler = server.Handler(
+            request=MockHTTPRequest(),
+            client_address=("127.0.0.1", 8080),
+            server=Mock(),
+        )
+        handler.command = "GET"
+        handler.requestline = "GET /search?q=track HTTP/1.0"
+        handler.request_version = "HTTP/1.0"
+        handler.path = "/search?q=track"
+        handler.headers = {}
+        handler.wfile = BytesIO()
+        handler.do_GET()
+
+        body = handler.wfile.getvalue().split(b"\r\n\r\n", 1)[1]
+        data = json.loads(body.decode("utf-8"))
+
+        self.assertEqual(handler._status_code, 200)
+        self.assertIn("tracks", data)
+        self.assertEqual(len(data["tracks"]), 1)
+        self.assertEqual(data["tracks"][0]["audioQuality"], "HIGH")
+
+
+class TestStreamQuality(unittest.TestCase):
+    """Test that /stream returns correct quality and handles requested quality."""
+
+    def setUp(self):
+        """Backup original SETTINGS and TRACKS."""
+        self.original_settings = server.SETTINGS.copy()
+        self.original_tracks = server.TRACKS
+
+    def tearDown(self):
+        """Restore original SETTINGS and TRACKS."""
+        server.SETTINGS = self.original_settings
+        server.TRACKS = self.original_tracks
+
+    def test_stream_returns_actual_quality_for_flac(self):
+        """Test that stream response includes LOSSLESS for FLAC regardless of requested quality."""
+        if not TAG_AVAILABLE:
+            self.skipTest("Tag not available")
+
+        mock_track = {
+            "id": "flac-track",
+            "title": "FLAC Track",
+            "artist": "Test Artist",
+            "album": "Test Album",
+            "format": "flac",
+            "codec": "flac",
+            "container": "flac",
+            "sampleRate": 44100,
+            "bitDepth": 16,
+            "bitrate": 1000,
+            "path": Path("/music/test.flac"),
+        }
+
+        server.TRACKS = [mock_track]
+        handler = server.Handler(
+            request=MockHTTPRequest(),
+            client_address=("127.0.0.1", 8080),
+            server=Mock(),
+        )
+        handler.command = "GET"
+        handler.requestline = "GET /stream/flac-track?quality=HIGH HTTP/1.0"
+        handler.request_version = "HTTP/1.0"
+        handler.path = "/stream/flac-track?quality=HIGH"
+        handler.headers = {}
+        handler.wfile = BytesIO()
+        handler.do_GET()
+
+        body = handler.wfile.getvalue().split(b"\r\n\r\n", 1)[1]
+        data = json.loads(body.decode("utf-8"))
+
+        self.assertEqual(handler._status_code, 200)
+        self.assertIn("quality", data)
+        # Should return actual file quality (LOSSLESS) not requested quality (HIGH)
+        self.assertEqual(data["quality"], "LOSSLESS")
+
+    def test_stream_returns_actual_quality_for_mp3(self):
+        """Test that stream response includes HIGH for MP3 regardless of requested quality."""
+        if not TAG_AVAILABLE:
+            self.skipTest("Tag not available")
+
+        mock_track = {
+            "id": "mp3-track",
+            "title": "MP3 Track",
+            "artist": "Test Artist",
+            "album": "Test Album",
+            "format": "mp3",
+            "codec": "mp3",
+            "container": "mp3",
+            "sampleRate": 44100,
+            "bitDepth": 16,
+            "bitrate": 320,
+            "path": Path("/music/test.mp3"),
+        }
+
+        server.TRACKS = [mock_track]
+        handler = server.Handler(
+            request=MockHTTPRequest(),
+            client_address=("127.0.0.1", 8080),
+            server=Mock(),
+        )
+        handler.command = "GET"
+        handler.requestline = "GET /stream/mp3-track?quality=LOSSLESS HTTP/1.0"
+        handler.request_version = "HTTP/1.0"
+        handler.path = "/stream/mp3-track?quality=LOSSLESS"
+        handler.headers = {}
+        handler.wfile = BytesIO()
+        handler.do_GET()
+
+        body = handler.wfile.getvalue().split(b"\r\n\r\n", 1)[1]
+        data = json.loads(body.decode("utf-8"))
+
+        self.assertEqual(handler._status_code, 200)
+        self.assertIn("quality", data)
+        # Should return actual file quality (HIGH) not requested quality (LOSSLESS)
+        self.assertEqual(data["quality"], "HIGH")
+
+    def test_stream_no_longer_rejects_non_lossless_quality(self):
+        """Test that stream no longer returns 404 for non-LOSSLESS requested quality."""
+        if not TAG_AVAILABLE:
+            self.skipTest("Tag not available")
+
+        mock_track = {
+            "id": "mp3-track",
+            "title": "MP3 Track",
+            "artist": "Test Artist",
+            "album": "Test Album",
+            "format": "mp3",
+            "codec": "mp3",
+            "container": "mp3",
+            "sampleRate": 44100,
+            "bitDepth": 16,
+            "bitrate": 320,
+            "path": Path("/music/test.mp3"),
+        }
+
+        server.TRACKS = [mock_track]
+        handler = server.Handler(
+            request=MockHTTPRequest(),
+            client_address=("127.0.0.1", 8080),
+            server=Mock(),
+        )
+        handler.command = "GET"
+        handler.requestline = "GET /stream/mp3-track?quality=HIGH HTTP/1.0"
+        handler.request_version = "HTTP/1.0"
+        handler.path = "/stream/mp3-track?quality=HIGH"
+        handler.headers = {}
+        handler.wfile = BytesIO()
+        handler.do_GET()
+
+        # Should return 200, not 404
+        self.assertEqual(handler._status_code, 200)
+
+
 if __name__ == '__main__':
     unittest.main()

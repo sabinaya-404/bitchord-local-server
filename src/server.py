@@ -70,6 +70,11 @@ def _is_path_under_music_dirs(path):
     return False
 
 
+def track_quality(track):
+    """Return the quality tier for a track: LOSSLESS for FLAC, HIGH for everything else."""
+    return "LOSSLESS" if track.get("format") == "flac" else "HIGH"
+
+
 class Handler(BaseHTTPRequestHandler):
     command = None
 
@@ -142,11 +147,7 @@ class Handler(BaseHTTPRequestHandler):
                                 for key, value in track.items()
                                 if key != "path"
                             },
-                            "audioQuality": (
-                                "LOSSLESS"
-                                if track["format"] == "flac"
-                                else "HIGH"
-                            ),
+                            "audioQuality": track_quality(track),
                             **(
                                 {"artworkURL": f"{SETTINGS['base_url']}/artwork/{track['id']}"}
                                 if base_url_https
@@ -161,26 +162,28 @@ class Handler(BaseHTTPRequestHandler):
 
         if route.startswith("/stream/"):
             track_id = route.removeprefix("/stream/")
-            quality = (
+            requested_quality = (
                 parse_qs(request.query)
                 .get("quality", ["LOSSLESS"])[0]
                 .upper()
             )
 
-            if quality != "LOSSLESS":
-                self.send_error(404)
-                return
+            # Log the requested quality for debugging Android app compatibility
+            logging.info("Stream request for track %s with requested quality: %s", track_id, requested_quality)
 
             track = get_track_by_id(track_id)
             if track is None:
                 self.send_error(404)
                 return
 
+            # Report the file's actual quality regardless of requested quality
+            actual_quality = track_quality(track)
+
             self.send_json(
                 {
                     "url": f"{SETTINGS['base_url']}/audio/{track_id}",
                     "format": track["format"],
-                    "quality": "LOSSLESS",
+                    "quality": actual_quality,
                     "codec": track["codec"],
                     "container": track["container"],
                     "manifest": "none",
