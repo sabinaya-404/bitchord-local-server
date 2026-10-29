@@ -32,11 +32,11 @@ class TestRefresh(unittest.TestCase):
         """Set up test fixtures for refresh tests."""
         # Create a temporary directory with test audio files
         self.test_dir = tempfile.TemporaryDirectory()
-        # Backup original SETTINGS and update music_dirs to include our temporary directory
+        # Backup original SETTINGS and replace music_dirs with only our temporary directory
         self.original_settings = server.SETTINGS.copy()
         server.SETTINGS = {
             **server.SETTINGS,
-            "music_dirs": list(server.SETTINGS["music_dirs"]) + [Path(self.test_dir.name).expanduser()]
+            "music_dirs": [Path(self.test_dir.name).expanduser()]
         }
 
         # Create a test file
