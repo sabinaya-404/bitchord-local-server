@@ -26,6 +26,27 @@ except ImportError:
     server = None
 
 
+def _set_tracks(tracks):
+    """Helper to set both TRACKS list and TRACKS_BY_ID dict in tests."""
+    if TAG_AVAILABLE:
+        server.TRACKS = tracks
+        server.TRACKS_BY_ID = {t["id"]: t for t in tracks}
+
+
+def _get_original_tracks():
+    """Helper to get both TRACKS and TRACKS_BY_ID for restoration."""
+    if TAG_AVAILABLE:
+        return server.TRACKS, server.TRACKS_BY_ID
+    return None, None
+
+
+def _restore_original_tracks(orig_tracks, orig_tracks_by_id):
+    """Helper to restore both TRACKS and TRACKS_BY_ID."""
+    if TAG_AVAILABLE:
+        server.TRACKS = orig_tracks
+        server.TRACKS_BY_ID = orig_tracks_by_id
+
+
 class TestConstantsAndHelpers(unittest.TestCase):
     """Test constants and helper functions that don't require the tag library."""
 
@@ -191,8 +212,8 @@ class TestSearchLogic(unittest.TestCase):
             for i in range(60)
         ]
 
-        orig_tracks = server.TRACKS
-        server.TRACKS = many_tracks
+        orig_tracks, orig_tracks_by_id = _get_original_tracks()
+        _set_tracks(many_tracks)
         try:
             data = self._get_search_json("/search?q=song")
             self.assertIn("tracks", data)
@@ -202,7 +223,7 @@ class TestSearchLogic(unittest.TestCase):
                 self.assertNotIn("path", track)
                 self.assertEqual(track["audioQuality"], "LOSSLESS")
         finally:
-            server.TRACKS = orig_tracks
+            _restore_original_tracks(orig_tracks, orig_tracks_by_id)
 
     def test_search_handler_empty_query_returns_empty_list(self):
         """Test that Handler's /search route with empty or whitespace query returns empty list."""
@@ -567,8 +588,8 @@ class TestScannerTrackField(unittest.TestCase):
             "path": Path("/music/test.mp3"),
         }
 
-        orig_tracks = server.TRACKS
-        server.TRACKS = [mock_track]
+        orig_tracks, orig_tracks_by_id = _get_original_tracks()
+        _set_tracks([mock_track])
         try:
             # Make a search request
             handler = server.Handler(
@@ -596,7 +617,7 @@ class TestScannerTrackField(unittest.TestCase):
             self.assertIn("track", response_track)
             self.assertEqual(response_track["track"], 5)
         finally:
-            server.TRACKS = orig_tracks
+            _restore_original_tracks(orig_tracks, orig_tracks_by_id)
 
     def test_search_response_includes_track_field_none(self):
         """Test that /search response includes track field as None when absent."""
@@ -619,8 +640,8 @@ class TestScannerTrackField(unittest.TestCase):
             "path": Path("/music/test.mp3"),
         }
 
-        orig_tracks = server.TRACKS
-        server.TRACKS = [mock_track]
+        orig_tracks, orig_tracks_by_id = _get_original_tracks()
+        _set_tracks([mock_track])
         try:
             handler = server.Handler(
                 request=MockHTTPRequest(),
@@ -647,7 +668,7 @@ class TestScannerTrackField(unittest.TestCase):
             self.assertIn("track", response_track)
             self.assertIsNone(response_track["track"])
         finally:
-            server.TRACKS = orig_tracks
+            _restore_original_tracks(orig_tracks, orig_tracks_by_id)
 
 
 class TestTrackQuality(unittest.TestCase):
@@ -708,12 +729,12 @@ class TestSearchAudioQuality(unittest.TestCase):
     def setUp(self):
         """Backup original SETTINGS and TRACKS."""
         self.original_settings = server.SETTINGS.copy()
-        self.original_tracks = server.TRACKS
+        self.original_tracks, self.original_tracks_by_id = _get_original_tracks()
 
     def tearDown(self):
         """Restore original SETTINGS and TRACKS."""
         server.SETTINGS = self.original_settings
-        server.TRACKS = self.original_tracks
+        _restore_original_tracks(self.original_tracks, self.original_tracks_by_id)
 
     def test_search_returns_audio_quality_lossless_for_flac(self):
         """Test that search response includes LOSSLESS for FLAC tracks."""
@@ -734,7 +755,7 @@ class TestSearchAudioQuality(unittest.TestCase):
             "path": Path("/music/test.flac"),
         }
 
-        server.TRACKS = [mock_track]
+        _set_tracks([mock_track])
         handler = server.Handler(
             request=MockHTTPRequest(),
             client_address=("127.0.0.1", 8080),
@@ -775,7 +796,7 @@ class TestSearchAudioQuality(unittest.TestCase):
             "path": Path("/music/test.mp3"),
         }
 
-        server.TRACKS = [mock_track]
+        _set_tracks([mock_track])
         handler = server.Handler(
             request=MockHTTPRequest(),
             client_address=("127.0.0.1", 8080),
@@ -804,12 +825,12 @@ class TestStreamQuality(unittest.TestCase):
     def setUp(self):
         """Backup original SETTINGS and TRACKS."""
         self.original_settings = server.SETTINGS.copy()
-        self.original_tracks = server.TRACKS
+        self.original_tracks, self.original_tracks_by_id = _get_original_tracks()
 
     def tearDown(self):
         """Restore original SETTINGS and TRACKS."""
         server.SETTINGS = self.original_settings
-        server.TRACKS = self.original_tracks
+        _restore_original_tracks(self.original_tracks, self.original_tracks_by_id)
 
     def test_stream_returns_actual_quality_for_flac(self):
         """Test that stream response includes LOSSLESS for FLAC regardless of requested quality."""
@@ -830,7 +851,7 @@ class TestStreamQuality(unittest.TestCase):
             "path": Path("/music/test.flac"),
         }
 
-        server.TRACKS = [mock_track]
+        _set_tracks([mock_track])
         handler = server.Handler(
             request=MockHTTPRequest(),
             client_address=("127.0.0.1", 8080),
@@ -871,7 +892,7 @@ class TestStreamQuality(unittest.TestCase):
             "path": Path("/music/test.mp3"),
         }
 
-        server.TRACKS = [mock_track]
+        _set_tracks([mock_track])
         handler = server.Handler(
             request=MockHTTPRequest(),
             client_address=("127.0.0.1", 8080),
@@ -912,7 +933,7 @@ class TestStreamQuality(unittest.TestCase):
             "path": Path("/music/test.mp3"),
         }
 
-        server.TRACKS = [mock_track]
+        _set_tracks([mock_track])
         handler = server.Handler(
             request=MockHTTPRequest(),
             client_address=("127.0.0.1", 8080),
@@ -936,12 +957,12 @@ class TestSearchMatching(unittest.TestCase):
     def setUp(self):
         """Backup original SETTINGS and TRACKS."""
         self.original_settings = server.SETTINGS.copy()
-        self.original_tracks = server.TRACKS
+        self.original_tracks, self.original_tracks_by_id = _get_original_tracks()
 
     def tearDown(self):
         """Restore original SETTINGS and TRACKS."""
         server.SETTINGS = self.original_settings
-        server.TRACKS = self.original_tracks
+        _restore_original_tracks(self.original_tracks, self.original_tracks_by_id)
 
     def _make_handler(self, path):
         """Create a handler for testing /search endpoint."""
@@ -995,7 +1016,7 @@ class TestSearchMatching(unittest.TestCase):
                 "_search": normalize("Another Song Artist B Album Y"),
             },
         ]
-        server.TRACKS = tracks
+        _set_tracks(tracks)
 
         # "artist a song" should match only t1 (has "a" which is unique to t1)
         handler, data = self._make_handler("/search?q=artist+a+song")
@@ -1034,7 +1055,7 @@ class TestSearchMatching(unittest.TestCase):
                 "_search": normalize("Café Artist Album"),
             },
         ]
-        server.TRACKS = tracks
+        _set_tracks(tracks)
 
         # Search without accent should match accented track
         handler, data = self._make_handler("/search?q=cafe")
@@ -1067,7 +1088,7 @@ class TestSearchMatching(unittest.TestCase):
                 "_search": normalize("Song-Title Artist Album"),
             },
         ]
-        server.TRACKS = tracks
+        _set_tracks(tracks)
 
         # Search with space instead of hyphen should match
         handler, data = self._make_handler("/search?q=song+title")
@@ -1100,7 +1121,7 @@ class TestSearchMatching(unittest.TestCase):
                 "_search": normalize("Track One Artist Two Album Three"),
             },
         ]
-        server.TRACKS = tracks
+        _set_tracks(tracks)
 
         queries = [
             "track one artist two",
@@ -1135,7 +1156,7 @@ class TestSearchMatching(unittest.TestCase):
                 "_search": normalize("Love Song Artist Album"),
             },
         ]
-        server.TRACKS = tracks
+        _set_tracks(tracks)
 
         # "lo" should NOT match "love" (substring match rejected)
         handler, data = self._make_handler("/search?q=lo")
@@ -1174,7 +1195,7 @@ class TestSearchMatching(unittest.TestCase):
                 "_search": normalize("Track Artist Album"),
             },
         ]
-        server.TRACKS = tracks
+        _set_tracks(tracks)
 
         empty_queries = ["", "   ", "\t\n", "  \t  "]
         for query in empty_queries:
@@ -1203,7 +1224,7 @@ class TestSearchMatching(unittest.TestCase):
                 "_search": normalize("Track Artist Album"),
             },
         ]
-        server.TRACKS = tracks
+        _set_tracks(tracks)
 
         punct_queries = ["...", "!!!", "???", ".,;:", "!@#$%"]
         for query in punct_queries:
@@ -1233,7 +1254,7 @@ class TestSearchMatching(unittest.TestCase):
                 "path": Path(f"/music/song{i}.flac"),
                 "_search": normalize(f"Song {i} Artist Album"),
             })
-        server.TRACKS = tracks
+        _set_tracks(tracks)
 
         handler, data = self._make_handler("/search?q=song")
         self.assertEqual(len(data["tracks"]), server.MAX_SEARCH_RESULTS)
@@ -1260,7 +1281,7 @@ class TestSearchMatching(unittest.TestCase):
                 "_search": normalize("Track Artist Album"),
             },
         ]
-        server.TRACKS = tracks
+        _set_tracks(tracks)
 
         handler, data = self._make_handler("/search?q=track")
         self.assertEqual(len(data["tracks"]), 1)
@@ -1291,7 +1312,7 @@ class TestSearchMatching(unittest.TestCase):
                 "_search": normalize("Test Track Test Artist Test Album"),
             },
         ]
-        server.TRACKS = tracks
+        _set_tracks(tracks)
 
         handler, data = self._make_handler("/search?q=test")
         self.assertEqual(len(data["tracks"]), 1)
@@ -1341,7 +1362,7 @@ class TestSearchMatching(unittest.TestCase):
                 "another_new_field": 123,
             },
         ]
-        server.TRACKS = tracks
+        _set_tracks(tracks)
 
         handler, data = self._make_handler("/search?q=test")
         self.assertEqual(len(data["tracks"]), 1)
@@ -1385,7 +1406,7 @@ class TestSearchMatching(unittest.TestCase):
             "path": Path("/music/mp3.mp3"),
             "_search": normalize("MP3 Track Artist Album"),
         }
-        server.TRACKS = [flac_track, mp3_track]
+        _set_tracks([flac_track, mp3_track])
 
         handler, data = self._make_handler("/search?q=track")
         self.assertEqual(len(data["tracks"]), 2)
@@ -1418,7 +1439,7 @@ class TestSearchMatching(unittest.TestCase):
                 "_search": normalize("Test Track Artist Album"),
             },
         ]
-        server.TRACKS = tracks
+        _set_tracks(tracks)
 
         # Test with HTTPS base_url
         original_base_url = server.SETTINGS["base_url"]
@@ -1462,7 +1483,7 @@ class TestSearchMatching(unittest.TestCase):
                 "path": Path(f"/music/song{i:02d}.flac"),
                 "_search": normalize(f"Song {i:02d} Artist Album"),
             })
-        server.TRACKS = tracks
+        _set_tracks(tracks)
 
         handler, data = self._make_handler("/search?q=song")
         self.assertEqual(len(data["tracks"]), server.MAX_SEARCH_RESULTS)

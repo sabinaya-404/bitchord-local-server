@@ -62,6 +62,9 @@ class TestRangeHandling(unittest.TestCase):
         # Patch the TRACKS global in server module to return our mock track
         self.track_patch = patch.object(server, 'TRACKS', [self.mock_track])
         self.track_patch.start()
+        # Also patch TRACKS_BY_ID for get_track_by_id() lookups
+        self.tracks_by_id_patch = patch.object(server, 'TRACKS_BY_ID', {self.mock_track["id"]: self.mock_track})
+        self.tracks_by_id_patch.start()
 
         # Create a handler instance for testing
         self.handler = server.Handler(
@@ -84,6 +87,7 @@ class TestRangeHandling(unittest.TestCase):
         # Restore original SETTINGS
         server.SETTINGS = self.original_settings
         self.track_patch.stop()
+        self.tracks_by_id_patch.stop()
         self.test_dir.cleanup()
 
     def _create_range_request(self, range_value=None):
@@ -208,6 +212,7 @@ class TestRangeHandling(unittest.TestCase):
 
         # Update the patched tracks
         server.TRACKS = [zero_track]
+        server.TRACKS_BY_ID = {zero_track["id"]: zero_track}
 
         self.handler.path = f"/audio/{zero_track['id']}"
         self.handler.headers = {"Range": "bytes=0-0"}
@@ -230,6 +235,7 @@ class TestRangeHandling(unittest.TestCase):
         zero_track["path"] = zero_file_path
 
         server.TRACKS = [zero_track]
+        server.TRACKS_BY_ID = {zero_track["id"]: zero_track}
 
         self.handler.path = f"/audio/{zero_track['id']}"
         self.handler.headers = {}
@@ -279,6 +285,9 @@ class TestSymlinkProtectionIntegration(unittest.TestCase):
         # Patch the TRACKS global in server module to return our mock track
         self.track_patch = patch.object(server, 'TRACKS', [self.mock_track])
         self.track_patch.start()
+        # Also patch TRACKS_BY_ID for get_track_by_id() lookups
+        self.tracks_by_id_patch = patch.object(server, 'TRACKS_BY_ID', {self.mock_track["id"]: self.mock_track})
+        self.tracks_by_id_patch.start()
 
         # Create a handler instance for testing
         self.handler = server.Handler(
@@ -299,6 +308,7 @@ class TestSymlinkProtectionIntegration(unittest.TestCase):
     def tearDown(self):
         """Clean up test fixtures."""
         self.track_patch.stop()
+        self.tracks_by_id_patch.stop()
         self.test_dir.cleanup()
 
     def _create_range_request(self, range_value=None):
@@ -368,6 +378,7 @@ class TestSymlinkProtectionIntegration(unittest.TestCase):
 
         # Update the patched tracks
         server.TRACKS = [zero_track]
+        server.TRACKS_BY_ID = {zero_track["id"]: zero_track}
 
         self.handler.path = f"/audio/{zero_track['id']}"
         self.handler.headers = {"Range": "bytes=0-0"}
@@ -388,6 +399,7 @@ class TestSymlinkProtectionIntegration(unittest.TestCase):
         zero_track["path"] = zero_file_path.resolve()
 
         server.TRACKS = [zero_track]
+        server.TRACKS_BY_ID = {zero_track["id"]: zero_track}
 
         self.handler.path = f"/audio/{zero_track['id']}"
         self.handler.headers = {}
@@ -415,6 +427,7 @@ class TestSymlinkProtectionIntegration(unittest.TestCase):
                     # Backup original SETTINGS and TRACKS
                     original_settings = server.SETTINGS.copy()
                     original_tracks = server.TRACKS
+                    original_tracks_by_id = server.TRACKS_BY_ID
                     try:
                         # Set music_dirs to only our music directory (to isolate)
                         server.SETTINGS = {
@@ -424,6 +437,7 @@ class TestSymlinkProtectionIntegration(unittest.TestCase):
                         # Scan the music directory to populate TRACKS
                         tracks = scan_music([music_dir_path])
                         server.TRACKS = tracks
+                        server.TRACKS_BY_ID = {t["id"]: t for t in tracks}
                         # Find the track for the symlink (should be one track)
                         self.assertEqual(len(tracks), 1)
                         track = tracks[0]
@@ -452,6 +466,7 @@ class TestSymlinkProtectionIntegration(unittest.TestCase):
                         # Restore SETTINGS and TRACKS
                         server.SETTINGS = original_settings
                         server.TRACKS = original_tracks
+                        server.TRACKS_BY_ID = original_tracks_by_id
 
 
 if __name__ == '__main__':

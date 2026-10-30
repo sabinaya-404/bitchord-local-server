@@ -62,6 +62,9 @@ class TestRefresh(unittest.TestCase):
         # Patch the TRACKS global in server module to return our mock track
         self.track_patch = patch.object(server, 'TRACKS', [self.mock_track])
         self.track_patch.start()
+        # Also patch TRACKS_BY_ID for get_track_by_id() lookups
+        self.tracks_by_id_patch = patch.object(server, 'TRACKS_BY_ID', {self.mock_track["id"]: self.mock_track})
+        self.tracks_by_id_patch.start()
 
         # Create a handler instance for testing
         self.handler = server.Handler(
@@ -82,6 +85,7 @@ class TestRefresh(unittest.TestCase):
         # Restore original SETTINGS
         server.SETTINGS = self.original_settings
         self.track_patch.stop()
+        self.tracks_by_id_patch.stop()
         self.test_dir.cleanup()
 
     def _create_post_request(self, path="/refresh"):

@@ -11,6 +11,7 @@ from src.scanner import scan_music, get_artwork_for_track, normalize, is_path_un
 MANIFEST_PATH = Path(__file__).with_name("manifest.json")
 SETTINGS = load_settings()
 TRACKS = scan_music(SETTINGS["music_dirs"])
+TRACKS_BY_ID = {t["id"]: t for t in TRACKS}
 print(f"Indexed {len(TRACKS)} tracks.")
 
 MAX_SEARCH_RESULTS = 50
@@ -36,14 +37,15 @@ _REFRESH_LOCK = threading.Lock()
 
 def get_track_by_id(track_id):
     """Find a track by its ID, or return None if not found."""
-    return next((track for track in TRACKS if track["id"] == track_id), None)
+    with _TRACKS_LOCK:
+        return TRACKS_BY_ID.get(track_id)
 
 
 def refresh_tracks():
     """Scan music directories and atomically replace the track index.
     Returns (success: bool, message: str, new_count: int).
     """
-    global TRACKS
+    global TRACKS, TRACKS_BY_ID
     with _REFRESH_LOCK:
         try:
             new_tracks = scan_music(SETTINGS["music_dirs"])
@@ -51,8 +53,11 @@ def refresh_tracks():
             logging.warning("Library refresh scan failed: %s", e)
             return False, "Scan failed", 0
 
+        new_tracks_by_id = {t["id"]: t for t in new_tracks}
+
         with _TRACKS_LOCK:
             TRACKS = new_tracks
+            TRACKS_BY_ID = new_tracks_by_id
         clear_artwork_cache()
     return True, "OK", len(new_tracks)
 

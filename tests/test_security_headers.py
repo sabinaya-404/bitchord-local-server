@@ -128,7 +128,9 @@ class TestSecurityHeaders(unittest.TestCase):
             "bitrate": 320,
         }
         orig_tracks = server.TRACKS
+        orig_tracks_by_id = server.TRACKS_BY_ID
         server.TRACKS = [mock_track]
+        server.TRACKS_BY_ID = {mock_track["id"]: mock_track}
 
         try:
             # 1. Stream metadata (200)
@@ -171,6 +173,7 @@ class TestSecurityHeaders(unittest.TestCase):
             self.assertEqual(headers.get("Content-Range"), "bytes */100")
         finally:
             server.TRACKS = orig_tracks
+            server.TRACKS_BY_ID = orig_tracks_by_id
             # Restore original SETTINGS
             server.SETTINGS = original_settings
             try:

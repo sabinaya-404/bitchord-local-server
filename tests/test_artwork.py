@@ -63,6 +63,8 @@ class TestArtwork(unittest.TestCase):
         # Patch the TRACKS global in server module to return our mock track
         self.track_patch = patch.object(server, 'TRACKS', [self.mock_track])
         self.track_patch.start()
+        # Also update TRACKS_BY_ID
+        server.TRACKS_BY_ID = {self.mock_track["id"]: self.mock_track}
 
         # Create a handler instance for testing
         self.handler = server.Handler(
@@ -83,6 +85,9 @@ class TestArtwork(unittest.TestCase):
         # Restore original SETTINGS
         server.SETTINGS = self.original_settings
         self.track_patch.stop()
+        # Restore TRACKS_BY_ID to original state
+        # The patch will restore TRACKS, so we need to rebuild TRACKS_BY_ID
+        server.TRACKS_BY_ID = {t["id"]: t for t in server.TRACKS}
         self.test_dir.cleanup()
 
     def _create_get_request(self, path):
@@ -146,6 +151,7 @@ class TestArtwork(unittest.TestCase):
         track_no_path["id"] = "no-path-track"
         track_no_path["path"] = None
         server.TRACKS = [track_no_path]
+        server.TRACKS_BY_ID = {track_no_path["id"]: track_no_path}
 
         self._create_get_request("/artwork/no-path-track")
         self._get_response_body()
@@ -294,7 +300,9 @@ class TestArtwork(unittest.TestCase):
             }
 
             orig_tracks = server.TRACKS
+            orig_tracks_by_id = server.TRACKS_BY_ID
             server.TRACKS = [mock_track]
+            server.TRACKS_BY_ID = {mock_track["id"]: mock_track}
             try:
                 # Mock get_artwork_for_track to return image data (simulating file has artwork)
                 with patch('src.server.get_artwork_for_track') as mock_get_artwork:
@@ -307,6 +315,7 @@ class TestArtwork(unittest.TestCase):
                     self.assertEqual(self.handler._status_code, 404)
             finally:
                 server.TRACKS = orig_tracks
+                server.TRACKS_BY_ID = orig_tracks_by_id
 
 
 class TestScannerArtwork(unittest.TestCase):
