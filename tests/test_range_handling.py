@@ -8,9 +8,9 @@ from io import BytesIO
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-import server
+import src.server as server
 
 
 class MockHTTPRequest:

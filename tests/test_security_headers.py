@@ -7,8 +7,8 @@ import sys
 import unittest
 from unittest.mock import Mock
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-import server
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import src.server as server
 
 
 class MockHTTPRequest:

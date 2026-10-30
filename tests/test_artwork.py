@@ -7,9 +7,9 @@ from io import BytesIO
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-import server
+import src.server as server
 
 
 class MockHTTPRequest:
@@ -113,7 +113,7 @@ class TestArtwork(unittest.TestCase):
     def test_artwork_endpoint_returns_image_when_artwork_exists(self):
         """Test that /artwork/{id} returns image data with correct MIME type when artwork exists."""
         # Mock get_artwork_for_track to return image data
-        with patch('server.get_artwork_for_track') as mock_get_artwork:
+        with patch('src.server.get_artwork_for_track') as mock_get_artwork:
             mock_get_artwork.return_value = (b'fake-image-data', 'image/jpeg')
 
             self._create_get_request("/artwork/test-track-id")
@@ -126,7 +126,7 @@ class TestArtwork(unittest.TestCase):
 
     def test_artwork_endpoint_returns_png_when_artwork_is_png(self):
         """Test that /artwork/{id} returns correct MIME type for PNG artwork."""
-        with patch('server.get_artwork_for_track') as mock_get_artwork:
+        with patch('src.server.get_artwork_for_track') as mock_get_artwork:
             mock_get_artwork.return_value = (b'fake-png-data', 'image/png')
 
             self._create_get_request("/artwork/test-track-id")
@@ -149,7 +149,7 @@ class TestArtwork(unittest.TestCase):
 
     def test_artwork_endpoint_rejects_unsupported_mime_type(self):
         """Test that /artwork/{id} returns 404 for unsupported MIME type (e.g., image/webp)."""
-        with patch('server.get_artwork_for_track') as mock_get_artwork:
+        with patch('src.server.get_artwork_for_track') as mock_get_artwork:
             mock_get_artwork.return_value = (b'fake-webp-data', 'image/webp')
 
             self._create_get_request("/artwork/test-track-id")
@@ -159,7 +159,7 @@ class TestArtwork(unittest.TestCase):
 
     def test_artwork_endpoint_rejects_malformed_mime_type(self):
         """Test that /artwork/{id} returns 404 for malformed/non-image MIME type."""
-        with patch('server.get_artwork_for_track') as mock_get_artwork:
+        with patch('src.server.get_artwork_for_track') as mock_get_artwork:
             mock_get_artwork.return_value = (b'fake-data', 'application/octet-stream')
 
             self._create_get_request("/artwork/test-track-id")
@@ -169,7 +169,7 @@ class TestArtwork(unittest.TestCase):
 
     def test_artwork_endpoint_rejects_empty_mime_type(self):
         """Test that /artwork/{id} returns 404 for empty/missing MIME type."""
-        with patch('server.get_artwork_for_track') as mock_get_artwork:
+        with patch('src.server.get_artwork_for_track') as mock_get_artwork:
             mock_get_artwork.return_value = (b'fake-data', '')
 
             self._create_get_request("/artwork/test-track-id")
@@ -182,7 +182,7 @@ class TestArtwork(unittest.TestCase):
         allowed_types = ["image/jpeg", "image/png", "image/gif", "image/bmp"]
         for mime_type in allowed_types:
             with self.subTest(mime_type=mime_type):
-                with patch('server.get_artwork_for_track') as mock_get_artwork:
+                with patch('src.server.get_artwork_for_track') as mock_get_artwork:
                     mock_get_artwork.return_value = (b'fake-data', mime_type)
 
                     self._create_get_request("/artwork/test-track-id")
