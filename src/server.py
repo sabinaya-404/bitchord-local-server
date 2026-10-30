@@ -15,6 +15,21 @@ print(f"Indexed {len(TRACKS)} tracks.")
 
 MAX_SEARCH_RESULTS = 50
 
+ALLOWED_SEARCH_FIELDS = {
+    "id",
+    "title",
+    "artist",
+    "album",
+    "duration",
+    "format",
+    "codec",
+    "container",
+    "sampleRate",
+    "bitDepth",
+    "bitrate",
+    "track",
+}
+
 _TRACKS_LOCK = threading.Lock()
 
 
@@ -146,7 +161,7 @@ class Handler(BaseHTTPRequestHandler):
                             **{
                                 key: value
                                 for key, value in track.items()
-                                if key not in ("path", "_search")
+                                if key in ALLOWED_SEARCH_FIELDS
                             },
                             "audioQuality": track_quality(track),
                             **(

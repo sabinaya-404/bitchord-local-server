@@ -1125,6 +1125,210 @@ class TestSearchMatching(unittest.TestCase):
         self.assertNotIn("path", response_track)
         self.assertNotIn("_search", response_track)
 
+    def test_search_response_allowlist_contains_approved_fields(self):
+        """Test that all approved metadata fields are present in search response."""
+        if not TAG_AVAILABLE:
+            self.skipTest("Tag not available")
+
+        tracks = [
+            {
+                "id": "t1",
+                "title": "Test Track",
+                "artist": "Test Artist",
+                "album": "Test Album",
+                "duration": 180,
+                "format": "flac",
+                "codec": "flac",
+                "container": "flac",
+                "sampleRate": 44100,
+                "bitDepth": 16,
+                "bitrate": 1000,
+                "track": 5,
+                "path": Path("/music/track.flac"),
+                "_search": normalize("Test Track Test Artist Test Album"),
+            },
+        ]
+        server.TRACKS = tracks
+
+        handler, data = self._make_handler("/search?q=test")
+        self.assertEqual(len(data["tracks"]), 1)
+        response_track = data["tracks"][0]
+
+        allowed_fields = {
+            "id", "title", "artist", "album", "duration",
+            "format", "codec", "container", "sampleRate", "bitDepth", "bitrate", "track"
+        }
+        for field in allowed_fields:
+            self.assertIn(field, response_track, f"Missing allowed field: {field}")
+
+        # Verify values are correct
+        self.assertEqual(response_track["id"], "t1")
+        self.assertEqual(response_track["title"], "Test Track")
+        self.assertEqual(response_track["artist"], "Test Artist")
+        self.assertEqual(response_track["album"], "Test Album")
+        self.assertEqual(response_track["duration"], 180)
+        self.assertEqual(response_track["format"], "flac")
+        self.assertEqual(response_track["codec"], "flac")
+        self.assertEqual(response_track["container"], "flac")
+        self.assertEqual(response_track["sampleRate"], 44100)
+        self.assertEqual(response_track["bitDepth"], 16)
+        self.assertEqual(response_track["bitrate"], 1000)
+        self.assertEqual(response_track["track"], 5)
+
+    def test_search_response_excludes_internal_and_unknown_fields(self):
+        """Test that path, _search, and arbitrary new fields are excluded."""
+        if not TAG_AVAILABLE:
+            self.skipTest("Tag not available")
+
+        tracks = [
+            {
+                "id": "t1",
+                "title": "Test Track",
+                "artist": "Test Artist",
+                "album": "Test Album",
+                "format": "flac",
+                "codec": "flac",
+                "container": "flac",
+                "sampleRate": 44100,
+                "bitDepth": 16,
+                "bitrate": 1000,
+                "path": Path("/music/track.flac"),
+                "_search": normalize("Test Track Test Artist Test Album"),
+                "unknown_field": "should_not_appear",
+                "another_new_field": 123,
+            },
+        ]
+        server.TRACKS = tracks
+
+        handler, data = self._make_handler("/search?q=test")
+        self.assertEqual(len(data["tracks"]), 1)
+        response_track = data["tracks"][0]
+
+        self.assertNotIn("path", response_track)
+        self.assertNotIn("_search", response_track)
+        self.assertNotIn("unknown_field", response_track)
+        self.assertNotIn("another_new_field", response_track)
+
+    def test_search_response_includes_audio_quality(self):
+        """Test that audioQuality computed field is always present."""
+        if not TAG_AVAILABLE:
+            self.skipTest("Tag not available")
+
+        flac_track = {
+            "id": "flac1",
+            "title": "FLAC Track",
+            "artist": "Artist",
+            "album": "Album",
+            "format": "flac",
+            "codec": "flac",
+            "container": "flac",
+            "sampleRate": 44100,
+            "bitDepth": 24,
+            "bitrate": 2000,
+            "path": Path("/music/flac.flac"),
+            "_search": normalize("FLAC Track Artist Album"),
+        }
+        mp3_track = {
+            "id": "mp31",
+            "title": "MP3 Track",
+            "artist": "Artist",
+            "album": "Album",
+            "format": "mp3",
+            "codec": "mp3",
+            "container": "mp3",
+            "sampleRate": 44100,
+            "bitDepth": 16,
+            "bitrate": 320,
+            "path": Path("/music/mp3.mp3"),
+            "_search": normalize("MP3 Track Artist Album"),
+        }
+        server.TRACKS = [flac_track, mp3_track]
+
+        handler, data = self._make_handler("/search?q=track")
+        self.assertEqual(len(data["tracks"]), 2)
+
+        for track in data["tracks"]:
+            self.assertIn("audioQuality", track)
+            if track["id"] == "flac1":
+                self.assertEqual(track["audioQuality"], "LOSSLESS")
+            elif track["id"] == "mp31":
+                self.assertEqual(track["audioQuality"], "HIGH")
+
+    def test_search_response_artwork_url_conditional_on_https(self):
+        """Test that artworkURL is only included when base_url is HTTPS."""
+        if not TAG_AVAILABLE:
+            self.skipTest("Tag not available")
+
+        tracks = [
+            {
+                "id": "t1",
+                "title": "Test Track",
+                "artist": "Artist",
+                "album": "Album",
+                "format": "flac",
+                "codec": "flac",
+                "container": "flac",
+                "sampleRate": 44100,
+                "bitDepth": 16,
+                "bitrate": 1000,
+                "path": Path("/music/track.flac"),
+                "_search": normalize("Test Track Artist Album"),
+            },
+        ]
+        server.TRACKS = tracks
+
+        # Test with HTTPS base_url
+        original_base_url = server.SETTINGS["base_url"]
+        server.SETTINGS["base_url"] = "https://example.ts.net"
+        try:
+            handler, data = self._make_handler("/search?q=test")
+            self.assertEqual(len(data["tracks"]), 1)
+            self.assertIn("artworkURL", data["tracks"][0])
+            self.assertEqual(data["tracks"][0]["artworkURL"], "https://example.ts.net/artwork/t1")
+        finally:
+            server.SETTINGS["base_url"] = original_base_url
+
+        # Test with HTTP base_url
+        server.SETTINGS["base_url"] = "http://127.0.0.1:8765"
+        try:
+            handler, data = self._make_handler("/search?q=test")
+            self.assertEqual(len(data["tracks"]), 1)
+            self.assertNotIn("artworkURL", data["tracks"][0])
+        finally:
+            server.SETTINGS["base_url"] = original_base_url
+
+    def test_search_preserves_ordering_and_limit(self):
+        """Test that response ordering matches track list and MAX_SEARCH_RESULTS is respected."""
+        if not TAG_AVAILABLE:
+            self.skipTest("Tag not available")
+
+        # Create more tracks than MAX_SEARCH_RESULTS (50)
+        tracks = []
+        for i in range(55):
+            tracks.append({
+                "id": f"track{i:02d}",
+                "title": f"Song {i:02d}",
+                "artist": "Artist",
+                "album": "Album",
+                "format": "flac",
+                "codec": "flac",
+                "container": "flac",
+                "sampleRate": 44100,
+                "bitDepth": 16,
+                "bitrate": 1000,
+                "path": Path(f"/music/song{i:02d}.flac"),
+                "_search": normalize(f"Song {i:02d} Artist Album"),
+            })
+        server.TRACKS = tracks
+
+        handler, data = self._make_handler("/search?q=song")
+        self.assertEqual(len(data["tracks"]), server.MAX_SEARCH_RESULTS)
+        self.assertEqual(len(data["tracks"]), 50)
+
+        # Verify ordering preserved (first 50 tracks)
+        for i, track in enumerate(data["tracks"]):
+            self.assertEqual(track["id"], f"track{i:02d}")
+
 
 class TestNormalizeFunction(unittest.TestCase):
     """Test the normalize helper function directly."""
