@@ -256,6 +256,319 @@ class TestRefresh(unittest.TestCase):
         # No errors should occur
         self.assertEqual(errors, [], f"Concurrent access errors: {errors}")
 
+    def test_concurrent_refreshes_serialized_scan(self):
+        """Multiple concurrent refreshes never execute scan_music simultaneously."""
+        original_scan = server.scan_music
+        scan_counter = {"current": 0, "max": 0}
+        scan_counter_lock = threading.Lock()
+        scan_started = threading.Event()
+        scan_continues = threading.Event()
+
+        def counting_scan(*args, **kwargs):
+            with scan_counter_lock:
+                scan_counter["current"] += 1
+                scan_counter["max"] = max(scan_counter["max"], scan_counter["current"])
+            scan_started.set()
+            scan_continues.wait(timeout=5)
+            with scan_counter_lock:
+                scan_counter["current"] -= 1
+            return original_scan(*args, **kwargs)
+
+        server.scan_music = counting_scan
+        try:
+            # Fire multiple concurrent refreshes
+            threads = []
+            results = []
+
+            def do_refresh():
+                h = server.Handler(
+                    request=MockHTTPRequest(),
+                    client_address=('127.0.0.1', 8080),
+                    server=Mock()
+                )
+                h.requestline = 'POST /refresh HTTP/1.0'
+                h.raw_requestline = b'POST /refresh HTTP/1.0'
+                h.request_version = 'HTTP/1.0'
+                h.path = '/refresh'
+                h.headers = {'Content-Length': '0'}
+                h._status_code = 200
+                h.headers_sent = {}
+                h.wfile = BytesIO()
+                h.command = 'POST'
+                h.do_POST()
+                results.append(h._status_code)
+
+            for _ in range(3):
+                t = threading.Thread(target=do_refresh)
+                threads.append(t)
+
+            for t in threads:
+                t.start()
+
+            # Wait for at least one scan to start, then allow it to proceed
+            scan_started.wait(timeout=2)
+            scan_continues.set()
+
+            for t in threads:
+                t.join(timeout=5)
+
+            # All refreshes should succeed
+            self.assertTrue(all(s == 200 for s in results), f"Refresh statuses: {results}")
+            # Maximum concurrent scans should be 1 (serialized)
+            self.assertEqual(scan_counter["max"], 1, "scan_music ran concurrently")
+        finally:
+            server.scan_music = original_scan
+
+    def test_second_refresh_waits_for_first(self):
+        """A second refresh waits until the first scan finishes."""
+        original_scan = server.scan_music
+        first_scan_done = threading.Event()
+        second_scan_started = threading.Event()
+
+        def slow_scan(*args, **kwargs):
+            if not first_scan_done.is_set():
+                first_scan_done.set()
+                # Hold first scan briefly
+                time.sleep(0.1)
+            else:
+                second_scan_started.set()
+            return original_scan(*args, **kwargs)
+
+        server.scan_music = slow_scan
+        try:
+            results = []
+
+            def do_refresh():
+                h = server.Handler(
+                    request=MockHTTPRequest(),
+                    client_address=('127.0.0.1', 8080),
+                    server=Mock()
+                )
+                h.requestline = 'POST /refresh HTTP/1.0'
+                h.raw_requestline = b'POST /refresh HTTP/1.0'
+                h.request_version = 'HTTP/1.0'
+                h.path = '/refresh'
+                h.headers = {'Content-Length': '0'}
+                h._status_code = 200
+                h.headers_sent = {}
+                h.wfile = BytesIO()
+                h.command = 'POST'
+                h.do_POST()
+                results.append(h._status_code)
+
+            # Start first refresh
+            t1 = threading.Thread(target=do_refresh)
+            t1.start()
+
+            # First scan should start
+            first_scan_done.wait(timeout=2)
+
+            # Start second refresh while first is still scanning
+            t2 = threading.Thread(target=do_refresh)
+            t2.start()
+
+            # Second scan should not start until first completes
+            # Give it a moment to potentially start (it shouldn't)
+            time.sleep(0.05)
+            self.assertFalse(second_scan_started.is_set(), "Second scan started before first finished")
+
+            # Wait for both to complete
+            t1.join(timeout=5)
+            t2.join(timeout=5)
+
+            second_scan_started.wait(timeout=2)
+            self.assertTrue(all(s == 200 for s in results), f"Refresh statuses: {results}")
+        finally:
+            server.scan_music = original_scan
+
+    def test_refresh_lock_released_on_scan_failure(self):
+        """A scan failure releases _REFRESH_LOCK, allowing a subsequent refresh."""
+        original_scan = server.scan_music
+        fail_first = {"value": True}
+
+        def failing_then_ok_scan(*args, **kwargs):
+            if fail_first["value"]:
+                fail_first["value"] = False
+                raise OSError("Simulated scan failure")
+            return original_scan(*args, **kwargs)
+
+        server.scan_music = failing_then_ok_scan
+        try:
+            # First refresh fails
+            self._create_post_request("/refresh")
+            response = self._get_response_json()
+            self.assertEqual(self.handler._status_code, 500)
+
+            # Second refresh should succeed (lock was released)
+            self._create_post_request("/refresh")
+            response = self._get_response_json()
+            self.assertEqual(self.handler._status_code, 200)
+            self.assertEqual(response["status"], "ok")
+        finally:
+            server.scan_music = original_scan
+
+    def test_readers_see_consistent_index_during_refresh(self):
+        """Readers remain functional and see complete old or new indexes during refresh."""
+        original_scan = server.scan_music
+        scan_ready = threading.Event()
+        scan_continues = threading.Event()
+        original_count = len(server.TRACKS)
+
+        def slow_scan(*args, **kwargs):
+            scan_ready.set()
+            scan_continues.wait(timeout=5)
+            return original_scan(*args, **kwargs)
+
+        server.scan_music = slow_scan
+        try:
+            read_counts = []
+            read_errors = []
+
+            def reader():
+                for _ in range(20):
+                    h = server.Handler(
+                        request=MockHTTPRequest(),
+                        client_address=('127.0.0.1', 8080),
+                        server=Mock()
+                    )
+                    h.requestline = 'GET /search?q=test HTTP/1.0'
+                    h.raw_requestline = b'GET /search?q=test HTTP/1.0'
+                    h.request_version = 'HTTP/1.0'
+                    h.path = '/search?q=test'
+                    h.headers = {}
+                    h._status_code = 200
+                    h.headers_sent = {}
+                    h.wfile = BytesIO()
+                    h.command = 'GET'
+                    try:
+                        h.do_GET()
+                        if h._status_code != 200:
+                            read_errors.append(f"Status {h._status_code}")
+                        else:
+                            body = h.wfile.getvalue().split(b"\r\n\r\n", 1)[1]
+                            data = json.loads(body.decode("utf-8"))
+                            read_counts.append(len(data["tracks"]))
+                    except Exception as e:
+                        read_errors.append(f"Error: {e}")
+
+            # Start reader threads
+            reader_threads = [threading.Thread(target=reader) for _ in range(2)]
+            for t in reader_threads:
+                t.start()
+
+            # Start refresh in background
+            def do_refresh():
+                h = server.Handler(
+                    request=MockHTTPRequest(),
+                    client_address=('127.0.0.1', 8080),
+                    server=Mock()
+                )
+                h.requestline = 'POST /refresh HTTP/1.0'
+                h.raw_requestline = b'POST /refresh HTTP/1.0'
+                h.request_version = 'HTTP/1.0'
+                h.path = '/refresh'
+                h.headers = {'Content-Length': '0'}
+                h._status_code = 200
+                h.headers_sent = {}
+                h.wfile = BytesIO()
+                h.command = 'POST'
+                h.do_POST()
+
+            refresh_thread = threading.Thread(target=do_refresh)
+            refresh_thread.start()
+
+            # Wait for scan to start, then let it complete
+            scan_ready.wait(timeout=2)
+            scan_continues.set()
+
+            refresh_thread.join(timeout=5)
+            for t in reader_threads:
+                t.join(timeout=5)
+
+            # All reads should succeed
+            self.assertEqual(read_errors, [], f"Read errors: {read_errors}")
+            # All read counts should be either old count or new count (1), never partial/invalid
+            expected_counts = {original_count, 1}
+            for c in read_counts:
+                self.assertIn(c, expected_counts, f"Invalid track count seen: {c}")
+        finally:
+            server.scan_music = original_scan
+
+    def test_search_not_blocked_during_refresh_scan(self):
+        """Search requests do not block while a refresh scan is running."""
+        original_scan = server.scan_music
+        scan_started = threading.Event()
+        scan_continues = threading.Event()
+        search_completed = threading.Event()
+
+        def slow_scan(*args, **kwargs):
+            scan_started.set()
+            scan_continues.wait(timeout=5)
+            return original_scan(*args, **kwargs)
+
+        server.scan_music = slow_scan
+        try:
+            search_status = {"value": None}
+
+            def do_search():
+                h = server.Handler(
+                    request=MockHTTPRequest(),
+                    client_address=('127.0.0.1', 8080),
+                    server=Mock()
+                )
+                h.requestline = 'GET /search?q=test HTTP/1.0'
+                h.raw_requestline = b'GET /search?q=test HTTP/1.0'
+                h.request_version = 'HTTP/1.0'
+                h.path = '/search?q=test'
+                h.headers = {}
+                h._status_code = 200
+                h.headers_sent = {}
+                h.wfile = BytesIO()
+                h.command = 'GET'
+                h.do_POST = lambda: None  # Not used
+                h.do_GET()
+                search_status["value"] = h._status_code
+                search_completed.set()
+
+            # Start refresh (will hold _REFRESH_LOCK during scan)
+            def do_refresh():
+                h = server.Handler(
+                    request=MockHTTPRequest(),
+                    client_address=('127.0.0.1', 8080),
+                    server=Mock()
+                )
+                h.requestline = 'POST /refresh HTTP/1.0'
+                h.raw_requestline = b'POST /refresh HTTP/1.0'
+                h.request_version = 'HTTP/1.0'
+                h.path = '/refresh'
+                h.headers = {'Content-Length': '0'}
+                h._status_code = 200
+                h.headers_sent = {}
+                h.wfile = BytesIO()
+                h.command = 'POST'
+                h.do_POST()
+
+            refresh_thread = threading.Thread(target=do_refresh)
+            refresh_thread.start()
+
+            # Wait for scan to start
+            scan_started.wait(timeout=2)
+
+            # Fire search while scan is running
+            search_thread = threading.Thread(target=do_search)
+            search_thread.start()
+
+            # Search should complete quickly (not wait for scan to finish)
+            search_completed.wait(timeout=2)
+            self.assertEqual(search_status["value"], 200, "Search blocked during refresh scan")
+
+            # Now let scan complete
+            scan_continues.set()
+            refresh_thread.join(timeout=5)
+            search_thread.join(timeout=2)
+        finally:
+            server.scan_music = original_scan
+
 
 if __name__ == '__main__':
     unittest.main()

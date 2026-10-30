@@ -31,6 +31,7 @@ ALLOWED_SEARCH_FIELDS = {
 }
 
 _TRACKS_LOCK = threading.Lock()
+_REFRESH_LOCK = threading.Lock()
 
 
 def get_track_by_id(track_id):
@@ -43,14 +44,15 @@ def refresh_tracks():
     Returns (success: bool, message: str, new_count: int).
     """
     global TRACKS
-    try:
-        new_tracks = scan_music(SETTINGS["music_dirs"])
-    except Exception as e:
-        logging.warning("Library refresh scan failed: %s", e)
-        return False, "Scan failed", 0
+    with _REFRESH_LOCK:
+        try:
+            new_tracks = scan_music(SETTINGS["music_dirs"])
+        except Exception as e:
+            logging.warning("Library refresh scan failed: %s", e)
+            return False, "Scan failed", 0
 
-    with _TRACKS_LOCK:
-        TRACKS = new_tracks
+        with _TRACKS_LOCK:
+            TRACKS = new_tracks
     return True, "OK", len(new_tracks)
 
 
