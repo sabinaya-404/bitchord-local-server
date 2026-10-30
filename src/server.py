@@ -6,7 +6,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from src.config import load_settings
-from src.scanner import scan_music, get_artwork_for_track
+from src.scanner import scan_music, get_artwork_for_track, normalize
 
 MANIFEST_PATH = Path(__file__).with_name("manifest.json")
 SETTINGS = load_settings()
@@ -114,23 +114,24 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if route == "/search":
-            query = (
-                parse_qs(request.query).get("q", [""])[0].strip().casefold()
-            )
+            raw_query = parse_qs(request.query).get("q", [""])[0].strip()
+            if not raw_query:
+                self.send_json({"tracks": []})
+                return
 
-            tracks = [
-                track
-                for track in TRACKS
-                if query
-                and query
-                in " ".join(
-                    [
-                        track["title"],
-                        track["artist"],
-                        track["album"],
-                    ]
-                ).casefold()
-            ]
+            query_words = normalize(raw_query).split()
+            if not query_words:
+                self.send_json({"tracks": []})
+                return
+
+            tracks = []
+            for track in TRACKS:
+                search_tokens = track.get("_search")
+                if search_tokens is None:
+                    # Fallback for tracks without precomputed _search (e.g., mock tracks in tests)
+                    search_tokens = normalize(f"{track.get('title', '')} {track.get('artist', '')} {track.get('album', '')}")
+                if all(word in search_tokens.split() for word in query_words):
+                    tracks.append(track)
 
             # Limit search results to prevent excessively large responses
             limited_tracks = tracks[:MAX_SEARCH_RESULTS]
@@ -145,7 +146,7 @@ class Handler(BaseHTTPRequestHandler):
                             **{
                                 key: value
                                 for key, value in track.items()
-                                if key != "path"
+                                if key not in ("path", "_search")
                             },
                             "audioQuality": track_quality(track),
                             **(

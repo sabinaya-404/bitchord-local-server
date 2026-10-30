@@ -12,16 +12,17 @@ class MockHTTPRequest:
         return BytesIO(b"")
 
 import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 try:
-    from scanner import scan_music, get_tag
-    import server
+    from src.scanner import scan_music, get_tag, normalize
+    import src.server as server
     TAG_AVAILABLE = True
 except ImportError:
     TAG_AVAILABLE = False
     scan_music = None
     get_tag = None
+    normalize = None
     server = None
 
 
@@ -38,7 +39,7 @@ class TestConstantsAndHelpers(unittest.TestCase):
     def test_track_id_length_constant_exists(self):
         """Test that TRACK_ID_LENGTH constant is defined in scanner."""
         if TAG_AVAILABLE:
-            import scanner
+            import src.scanner as scanner
             self.assertTrue(hasattr(scanner, 'TRACK_ID_LENGTH'))
             self.assertIsInstance(scanner.TRACK_ID_LENGTH, int)
             self.assertGreater(scanner.TRACK_ID_LENGTH, 0)
@@ -221,7 +222,7 @@ class TestImportAndBasicStructure(unittest.TestCase):
         """Test that scanner module can be imported."""
         # This test will pass if tag is available, otherwise we skip
         if TAG_AVAILABLE:
-            import scanner
+            import src.scanner as scanner
             self.assertTrue(hasattr(scanner, 'scan_music'))
             self.assertTrue(hasattr(scanner, 'get_tag'))
         else:
@@ -230,7 +231,7 @@ class TestImportAndBasicStructure(unittest.TestCase):
     def test_server_can_be_imported(self):
         """Test that server module can be imported."""
         if TAG_AVAILABLE:
-            import server
+            # server is already imported as `import src.server as server`
             self.assertTrue(hasattr(server, 'SETTINGS'))
             self.assertTrue(hasattr(server, 'TRACKS'))
             self.assertTrue(hasattr(server, 'MANIFEST_PATH'))
@@ -242,7 +243,7 @@ class TestImportAndBasicStructure(unittest.TestCase):
     def test_get_tag_function_exists(self):
         """Test that get_tag function exists and works."""
         if TAG_AVAILABLE:
-            from scanner import get_tag
+            # get_tag is already imported from src.scanner
             # Test basic functionality
             tags = {"title": ["Test Song"]}
             result = get_tag(tags, "title", "Fallback")
@@ -784,6 +785,381 @@ class TestStreamQuality(unittest.TestCase):
 
         # Should return 200, not 404
         self.assertEqual(handler._status_code, 200)
+
+
+class TestSearchMatching(unittest.TestCase):
+    """Test improved search matching with normalize, word-based matching, and precomputed _search."""
+
+    def setUp(self):
+        """Backup original SETTINGS and TRACKS."""
+        self.original_settings = server.SETTINGS.copy()
+        self.original_tracks = server.TRACKS
+
+    def tearDown(self):
+        """Restore original SETTINGS and TRACKS."""
+        server.SETTINGS = self.original_settings
+        server.TRACKS = self.original_tracks
+
+    def _make_handler(self, path):
+        """Create a handler for testing /search endpoint."""
+        handler = server.Handler(
+            request=MockHTTPRequest(),
+            client_address=("127.0.0.1", 8080),
+            server=Mock(),
+        )
+        handler.command = "GET"
+        handler.requestline = f"GET {path} HTTP/1.0"
+        handler.request_version = "HTTP/1.0"
+        handler.path = path
+        handler.headers = {}
+        handler.wfile = BytesIO()
+        handler.do_GET()
+        body = handler.wfile.getvalue().split(b"\r\n\r\n", 1)[1]
+        return handler, json.loads(body.decode("utf-8"))
+
+    def test_search_multi_word_match(self):
+        """Test multi-word search: all words must match regardless of order."""
+        if not TAG_AVAILABLE:
+            self.skipTest("Tag not available")
+
+        tracks = [
+            {
+                "id": "t1",
+                "title": "Song One",
+                "artist": "Artist A",
+                "album": "Album X",
+                "format": "flac",
+                "codec": "flac",
+                "container": "flac",
+                "sampleRate": 44100,
+                "bitDepth": 16,
+                "bitrate": 1000,
+                "path": Path("/music/song1.flac"),
+                "_search": normalize("Song One Artist A Album X"),
+            },
+            {
+                "id": "t2",
+                "title": "Another Song",
+                "artist": "Artist B",
+                "album": "Album Y",
+                "format": "mp3",
+                "codec": "mp3",
+                "container": "mp3",
+                "sampleRate": 44100,
+                "bitDepth": 16,
+                "bitrate": 320,
+                "path": Path("/music/song2.mp3"),
+                "_search": normalize("Another Song Artist B Album Y"),
+            },
+        ]
+        server.TRACKS = tracks
+
+        # "artist a song" should match only t1 (has "a" which is unique to t1)
+        handler, data = self._make_handler("/search?q=artist+a+song")
+        self.assertEqual(len(data["tracks"]), 1)
+        self.assertEqual(data["tracks"][0]["id"], "t1")
+
+        # "song artist" matches BOTH t1 and t2 (both have "song" and "artist" as words)
+        handler, data = self._make_handler("/search?q=song+artist")
+        self.assertEqual(len(data["tracks"]), 2)
+        result_ids = {t["id"] for t in data["tracks"]}
+        self.assertEqual(result_ids, {"t1", "t2"})
+
+        # "artist b another" should match only t2 (has "b" and "another" unique to t2)
+        handler, data = self._make_handler("/search?q=artist+b+another")
+        self.assertEqual(len(data["tracks"]), 1)
+        self.assertEqual(data["tracks"][0]["id"], "t2")
+
+    def test_search_accent_normalization(self):
+        """Test that accented characters are normalized in search."""
+        if not TAG_AVAILABLE:
+            self.skipTest("Tag not available")
+
+        tracks = [
+            {
+                "id": "t1",
+                "title": "Café",
+                "artist": "Artist",
+                "album": "Album",
+                "format": "flac",
+                "codec": "flac",
+                "container": "flac",
+                "sampleRate": 44100,
+                "bitDepth": 16,
+                "bitrate": 1000,
+                "path": Path("/music/cafe.flac"),
+                "_search": normalize("Café Artist Album"),
+            },
+        ]
+        server.TRACKS = tracks
+
+        # Search without accent should match accented track
+        handler, data = self._make_handler("/search?q=cafe")
+        self.assertEqual(len(data["tracks"]), 1)
+        self.assertEqual(data["tracks"][0]["title"], "Café")
+
+        # Search with accent should also match
+        handler, data = self._make_handler("/search?q=café")
+        self.assertEqual(len(data["tracks"]), 1)
+        self.assertEqual(data["tracks"][0]["title"], "Café")
+
+    def test_search_punctuation_normalization(self):
+        """Test that punctuation is converted to spaces in search."""
+        if not TAG_AVAILABLE:
+            self.skipTest("Tag not available")
+
+        tracks = [
+            {
+                "id": "t1",
+                "title": "Song-Title",
+                "artist": "Artist",
+                "album": "Album",
+                "format": "flac",
+                "codec": "flac",
+                "container": "flac",
+                "sampleRate": 44100,
+                "bitDepth": 16,
+                "bitrate": 1000,
+                "path": Path("/music/song-title.flac"),
+                "_search": normalize("Song-Title Artist Album"),
+            },
+        ]
+        server.TRACKS = tracks
+
+        # Search with space instead of hyphen should match
+        handler, data = self._make_handler("/search?q=song+title")
+        self.assertEqual(len(data["tracks"]), 1)
+        self.assertEqual(data["tracks"][0]["title"], "Song-Title")
+
+        # Search with punctuation should also work
+        handler, data = self._make_handler("/search?q=song-title")
+        self.assertEqual(len(data["tracks"]), 1)
+        self.assertEqual(data["tracks"][0]["title"], "Song-Title")
+
+    def test_search_order_independence(self):
+        """Test that word order doesn't matter in search."""
+        if not TAG_AVAILABLE:
+            self.skipTest("Tag not available")
+
+        tracks = [
+            {
+                "id": "t1",
+                "title": "Track One",
+                "artist": "Artist Two",
+                "album": "Album Three",
+                "format": "flac",
+                "codec": "flac",
+                "container": "flac",
+                "sampleRate": 44100,
+                "bitDepth": 16,
+                "bitrate": 1000,
+                "path": Path("/music/track.flac"),
+                "_search": normalize("Track One Artist Two Album Three"),
+            },
+        ]
+        server.TRACKS = tracks
+
+        queries = [
+            "track one artist two",
+            "artist two track one",
+            "one track two artist",
+            "album three track one",
+        ]
+        for query in queries:
+            with self.subTest(query=query):
+                handler, data = self._make_handler(f"/search?q={query.replace(' ', '+')}")
+                self.assertEqual(len(data["tracks"]), 1, f"Failed for query: {query}")
+                self.assertEqual(data["tracks"][0]["id"], "t1")
+
+    def test_search_partial_word_rejection(self):
+        """Test that partial word matches are rejected (whole-word matching)."""
+        if not TAG_AVAILABLE:
+            self.skipTest("Tag not available")
+
+        tracks = [
+            {
+                "id": "t1",
+                "title": "Love Song",
+                "artist": "Artist",
+                "album": "Album",
+                "format": "flac",
+                "codec": "flac",
+                "container": "flac",
+                "sampleRate": 44100,
+                "bitDepth": 16,
+                "bitrate": 1000,
+                "path": Path("/music/love.flac"),
+                "_search": normalize("Love Song Artist Album"),
+            },
+        ]
+        server.TRACKS = tracks
+
+        # "lo" should NOT match "love" (substring match rejected)
+        handler, data = self._make_handler("/search?q=lo")
+        self.assertEqual(len(data["tracks"]), 0)
+
+        # "lov" should NOT match "love"
+        handler, data = self._make_handler("/search?q=lov")
+        self.assertEqual(len(data["tracks"]), 0)
+
+        # "love" SHOULD match
+        handler, data = self._make_handler("/search?q=love")
+        self.assertEqual(len(data["tracks"]), 1)
+
+        # "song" SHOULD match
+        handler, data = self._make_handler("/search?q=song")
+        self.assertEqual(len(data["tracks"]), 1)
+
+    def test_search_empty_query_returns_empty(self):
+        """Test that empty or whitespace-only queries return empty results."""
+        if not TAG_AVAILABLE:
+            self.skipTest("Tag not available")
+
+        tracks = [
+            {
+                "id": "t1",
+                "title": "Track",
+                "artist": "Artist",
+                "album": "Album",
+                "format": "flac",
+                "codec": "flac",
+                "container": "flac",
+                "sampleRate": 44100,
+                "bitDepth": 16,
+                "bitrate": 1000,
+                "path": Path("/music/track.flac"),
+                "_search": normalize("Track Artist Album"),
+            },
+        ]
+        server.TRACKS = tracks
+
+        empty_queries = ["", "   ", "\t\n", "  \t  "]
+        for query in empty_queries:
+            with self.subTest(query=repr(query)):
+                handler, data = self._make_handler(f"/search?q={query}")
+                self.assertEqual(data["tracks"], [], f"Expected empty for query: {repr(query)}")
+
+    def test_search_punctuation_only_query_returns_empty(self):
+        """Test that punctuation-only queries return empty results."""
+        if not TAG_AVAILABLE:
+            self.skipTest("Tag not available")
+
+        tracks = [
+            {
+                "id": "t1",
+                "title": "Track",
+                "artist": "Artist",
+                "album": "Album",
+                "format": "flac",
+                "codec": "flac",
+                "container": "flac",
+                "sampleRate": 44100,
+                "bitDepth": 16,
+                "bitrate": 1000,
+                "path": Path("/music/track.flac"),
+                "_search": normalize("Track Artist Album"),
+            },
+        ]
+        server.TRACKS = tracks
+
+        punct_queries = ["...", "!!!", "???", ".,;:", "!@#$%"]
+        for query in punct_queries:
+            with self.subTest(query=query):
+                handler, data = self._make_handler(f"/search?q={query}")
+                self.assertEqual(data["tracks"], [], f"Expected empty for query: {query}")
+
+    def test_search_preserves_max_results_limit(self):
+        """Test that MAX_SEARCH_RESULTS limit is preserved."""
+        if not TAG_AVAILABLE:
+            self.skipTest("Tag not available")
+
+        # Create more tracks than MAX_SEARCH_RESULTS
+        tracks = []
+        for i in range(60):
+            tracks.append({
+                "id": f"track{i}",
+                "title": f"Song {i}",
+                "artist": "Artist",
+                "album": "Album",
+                "format": "flac",
+                "codec": "flac",
+                "container": "flac",
+                "sampleRate": 44100,
+                "bitDepth": 16,
+                "bitrate": 1000,
+                "path": Path(f"/music/song{i}.flac"),
+                "_search": normalize(f"Song {i} Artist Album"),
+            })
+        server.TRACKS = tracks
+
+        handler, data = self._make_handler("/search?q=song")
+        self.assertEqual(len(data["tracks"]), server.MAX_SEARCH_RESULTS)
+        self.assertEqual(len(data["tracks"]), 50)
+
+    def test_search_no_internal_fields_in_response(self):
+        """Test that _search and path are never exposed in search response."""
+        if not TAG_AVAILABLE:
+            self.skipTest("Tag not available")
+
+        tracks = [
+            {
+                "id": "t1",
+                "title": "Track",
+                "artist": "Artist",
+                "album": "Album",
+                "format": "flac",
+                "codec": "flac",
+                "container": "flac",
+                "sampleRate": 44100,
+                "bitDepth": 16,
+                "bitrate": 1000,
+                "path": Path("/music/track.flac"),
+                "_search": normalize("Track Artist Album"),
+            },
+        ]
+        server.TRACKS = tracks
+
+        handler, data = self._make_handler("/search?q=track")
+        self.assertEqual(len(data["tracks"]), 1)
+        response_track = data["tracks"][0]
+        self.assertNotIn("path", response_track)
+        self.assertNotIn("_search", response_track)
+
+
+class TestNormalizeFunction(unittest.TestCase):
+    """Test the normalize helper function directly."""
+
+    def test_normalize_basic(self):
+        """Test basic normalization."""
+        self.assertEqual(normalize("Hello World"), "hello world")
+        self.assertEqual(normalize("HELLO WORLD"), "hello world")
+        self.assertEqual(normalize("  hello   world  "), "hello world")
+
+    def test_normalize_accents(self):
+        """Test accent removal."""
+        self.assertEqual(normalize("café"), "cafe")
+        self.assertEqual(normalize("naïve"), "naive")
+        self.assertEqual(normalize("résumé"), "resume")
+        self.assertEqual(normalize("piñata"), "pinata")
+
+    def test_normalize_punctuation(self):
+        """Test punctuation converted to spaces."""
+        self.assertEqual(normalize("song-title"), "song title")
+        self.assertEqual(normalize("artist,title"), "artist title")
+        self.assertEqual(normalize("album (remix)"), "album remix")
+        self.assertEqual(normalize("hello!@#$world"), "hello world")
+
+    def test_normalize_empty(self):
+        """Test empty/None handling."""
+        self.assertEqual(normalize(""), "")
+        self.assertEqual(normalize(None), "")
+        self.assertEqual(normalize("   "), "")
+        self.assertEqual(normalize("!!!"), "")
+
+    def test_normalize_casefold(self):
+        """Test casefold for unicode."""
+        self.assertEqual(normalize("Straße"), "strasse")  # German sharp S
+        self.assertEqual(normalize("MASS"), "mass")
 
 
 if __name__ == '__main__':

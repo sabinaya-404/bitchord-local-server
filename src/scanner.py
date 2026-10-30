@@ -1,10 +1,26 @@
 import hashlib
 import logging
+import unicodedata
 from pathlib import Path
 
 from tinytag import TinyTag
 
 TRACK_ID_LENGTH = 16
+
+
+def normalize(text):
+    """Normalize text for search: casefold, remove accents, punctuation -> spaces."""
+    if not text:
+        return ""
+    # NFKD decomposes accented chars; filter out combining marks
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    # casefold
+    text = text.casefold()
+    # punctuation -> spaces
+    text = "".join(c if c.isalnum() or c.isspace() else " " for c in text)
+    # collapse whitespace
+    return " ".join(text.split())
 
 
 AUDIO_EXTENSIONS = {
@@ -57,6 +73,8 @@ def scan_music(music_dirs):
                     str(path.resolve()).casefold().encode("utf-8")
                 ).hexdigest()[:TRACK_ID_LENGTH]
 
+                search_string = normalize(f"{title} {artist} {album}")
+
                 tracks.append(
                     {
                         "id": track_id,
@@ -72,6 +90,7 @@ def scan_music(music_dirs):
                         "bitrate": bitrate,
                         "track": tag.track,
                         "path": path.resolve(),
+                        "_search": search_string,
                     }
                 )
 
