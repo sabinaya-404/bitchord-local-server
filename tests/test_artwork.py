@@ -263,6 +263,47 @@ class TestArtwork(unittest.TestCase):
                 finally:
                     server.SETTINGS = original_settings
 
+    def test_artwork_endpoint_rejects_outside_path(self):
+        """Test that artwork endpoint rejects a track whose path escapes music directories."""
+        import tempfile
+        from pathlib import Path
+
+        # Create a file outside any music directory
+        with tempfile.TemporaryDirectory() as outside_dir:
+            outside_path = Path(outside_dir)
+            outside_file = outside_path / "outside.mp3"
+            outside_file.write_bytes(b"outside audio data")
+
+            # Create a mock track with path pointing outside
+            mock_track = {
+                "id": "outside-track",
+                "title": "Outside Track",
+                "artist": "Test Artist",
+                "album": "Test Album",
+                "path": outside_file.resolve(),
+                "format": "mp3",
+                "codec": "mp3",
+                "container": "mp3",
+                "sampleRate": 44100,
+                "bitDepth": 16,
+                "bitrate": 320,
+            }
+
+            orig_tracks = server.TRACKS
+            server.TRACKS = [mock_track]
+            try:
+                # Mock get_artwork_for_track to return image data (simulating file has artwork)
+                with patch('src.server.get_artwork_for_track') as mock_get_artwork:
+                    mock_get_artwork.return_value = (b'fake-image-data', 'image/jpeg')
+
+                    self._create_get_request("/artwork/outside-track")
+                    body = self._get_response_body()
+
+                    # Should be rejected with 404 because path is outside music dirs
+                    self.assertEqual(self.handler._status_code, 404)
+            finally:
+                server.TRACKS = orig_tracks
+
 
 class TestScannerArtwork(unittest.TestCase):
     """Test the scanner's artwork extraction function."""

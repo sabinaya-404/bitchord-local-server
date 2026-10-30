@@ -8,6 +8,26 @@ from tinytag import TinyTag
 TRACK_ID_LENGTH = 16
 
 
+def is_path_under_music_dirs(path, music_dirs):
+    """Check if a resolved path is under any of the resolved music directories.
+    Used by both scanner and server for consistent path-boundary enforcement.
+    """
+    if path is None:
+        return False
+    try:
+        resolved_path = path.resolve()
+    except (OSError, ValueError):
+        return False
+    for music_dir in music_dirs:
+        try:
+            resolved_music_dir = music_dir.resolve()
+            if resolved_music_dir in resolved_path.parents or resolved_music_dir == resolved_path:
+                return True
+        except (OSError, ValueError):
+            continue
+    return False
+
+
 def normalize(text):
     """Normalize text for search: casefold, remove accents, punctuation -> spaces."""
     if not text:
@@ -69,8 +89,12 @@ def scan_music(music_dirs):
                 bit_depth = tag.bitdepth
                 bitrate = int(tag.bitrate * 1000) if tag.bitrate is not None else None
 
+                resolved_path = path.resolve()
+                if not is_path_under_music_dirs(resolved_path, music_dirs):
+                    continue
+
                 track_id = hashlib.sha256(
-                    str(path.resolve()).casefold().encode("utf-8")
+                    str(resolved_path).casefold().encode("utf-8")
                 ).hexdigest()[:TRACK_ID_LENGTH]
 
                 search_string = normalize(f"{title} {artist} {album}")

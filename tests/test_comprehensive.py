@@ -344,6 +344,149 @@ class TestSymlinkProtection(unittest.TestCase):
                     except OSError:
                         pass
 
+    def test_symlink_inside_music_dir_pointing_inside_allowed(self):
+        """Symlink in music dir pointing to another location inside music dirs: allowed."""
+        import tempfile
+        import os
+        from pathlib import Path
+        music_dirs = server.SETTINGS.get("music_dirs", [])
+        if not music_dirs:
+            self.skipTest("No music directories configured")
+        with tempfile.TemporaryDirectory(dir=music_dirs[0]) as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            # Create a real file inside the music directory
+            real_file = tmpdir_path / "real.mp3"
+            real_file.write_bytes(b"real audio data")
+            # Create a symlink pointing to the real file
+            link_path = music_dirs[0] / "link_inside.mp3"
+            try:
+                os.symlink(real_file, link_path)
+            except OSError as e:
+                self.skipTest(f"Cannot create symlink: {e}")
+            try:
+                # Scan should find both the real file and the symlink (which resolves to same file)
+                tracks = scan_music(music_dirs)
+                # Both should resolve to the same path, so only one track (deduplication by path not implemented, but both will have same track_id)
+                # At minimum, the symlink should not cause an error and should be indexed
+                link_tracks = [t for t in tracks if t.get("path") and real_file.resolve() in t["path"].parents]
+                self.assertGreaterEqual(len(link_tracks), 1, "Symlink inside music dir should be indexed")
+            finally:
+                if link_path.exists():
+                    try:
+                        link_path.unlink()
+                    except OSError:
+                        pass
+
+    def test_symlink_inside_music_dir_pointing_outside_rejected_at_scan(self):
+        """Symlink in music dir pointing outside all music dirs: rejected during scanning."""
+        import tempfile
+        import os
+        from pathlib import Path
+        music_dirs = server.SETTINGS.get("music_dirs", [])
+        if not music_dirs:
+            self.skipTest("No music directories configured")
+        with tempfile.TemporaryDirectory() as outside_dir:
+            outside_path = Path(outside_dir)
+            outside_file = outside_path / "outside.mp3"
+            outside_file.write_bytes(b"outside audio data")
+            # Create symlink inside music dir pointing outside
+            link_path = music_dirs[0] / "link_outside.mp3"
+            try:
+                os.symlink(outside_file, link_path)
+            except OSError as e:
+                self.skipTest(f"Cannot create symlink: {e}")
+            try:
+                tracks = scan_music(music_dirs)
+                # The symlink's resolved path (outside_file) should NOT be under any music dir
+                # So it should not appear in tracks
+                outside_tracks = [t for t in tracks if t.get("path") == outside_file.resolve()]
+                self.assertEqual(len(outside_tracks), 0, "Symlink pointing outside should not be indexed")
+            finally:
+                if link_path.exists():
+                    try:
+                        link_path.unlink()
+                    except OSError:
+                        pass
+
+    def test_symlinked_music_dir_remains_usable(self):
+        """A configured music directory that is itself a symlink remains usable."""
+        import tempfile
+        import os
+        from pathlib import Path
+        music_dirs = server.SETTINGS.get("music_dirs", [])
+        if not music_dirs:
+            self.skipTest("No music directories configured")
+        with tempfile.TemporaryDirectory() as real_music_dir:
+            real_music = Path(real_music_dir)
+            real_file = real_music / "real.mp3"
+            real_file.write_bytes(b"real audio data")
+            # Create a symlink to the real music directory
+            link_dir = music_dirs[0] / "symlinked_music"
+            try:
+                os.symlink(real_music, link_dir, target_is_directory=True)
+            except OSError as e:
+                self.skipTest(f"Cannot create directory symlink: {e}")
+            try:
+                # Add the symlinked directory to music_dirs temporarily
+                original_music_dirs = server.SETTINGS["music_dirs"]
+                server.SETTINGS["music_dirs"] = original_music_dirs + [link_dir]
+                try:
+                    tracks = scan_music(server.SETTINGS["music_dirs"])
+                    # Should find the file through the symlinked directory
+                    found = any(t.get("path") and real_file.resolve() == t["path"] for t in tracks)
+                    self.assertTrue(found, "Symlinked music directory should be scanned")
+                finally:
+                    server.SETTINGS["music_dirs"] = original_music_dirs
+            finally:
+                if link_dir.exists():
+                    try:
+                        link_dir.unlink()
+                    except OSError:
+                        pass
+
+    def test_multiple_music_dirs_with_symlinks_between(self):
+        """Multiple configured music directories with symlinks between them."""
+        import tempfile
+        import os
+        from pathlib import Path
+        music_dirs = server.SETTINGS.get("music_dirs", [])
+        if not music_dirs:
+            self.skipTest("No music directories configured")
+        with tempfile.TemporaryDirectory() as dir1, tempfile.TemporaryDirectory() as dir2:
+            music1 = Path(dir1)
+            music2 = Path(dir2)
+            file1 = music1 / "song1.mp3"
+            file1.write_bytes(b"song 1")
+            file2 = music2 / "song2.mp3"
+            file2.write_bytes(b"song 2")
+            # Create symlink from music1 to music2 file
+            link_in_1 = music1 / "link_to_song2.mp3"
+            try:
+                os.symlink(file2, link_in_1)
+            except OSError as e:
+                self.skipTest(f"Cannot create symlink: {e}")
+            try:
+                # Configure both directories
+                original_music_dirs = server.SETTINGS["music_dirs"]
+                server.SETTINGS["music_dirs"] = [music1, music2]
+                try:
+                    tracks = scan_music(server.SETTINGS["music_dirs"])
+                    # Should find both real files and the symlink (which resolves to file2 in music2)
+                    # file1 and file2 should be found
+                    paths = {t["path"] for t in tracks if t.get("path")}
+                    self.assertIn(file1.resolve(), paths)
+                    self.assertIn(file2.resolve(), paths)
+                    # The symlink in music1 pointing to file2 in music2 should also resolve to file2
+                    # So we should have at least file1 and file2
+                finally:
+                    server.SETTINGS["music_dirs"] = original_music_dirs
+            finally:
+                if link_in_1.exists():
+                    try:
+                        link_in_1.unlink()
+                    except OSError:
+                        pass
+
 
 class TestScannerTrackField(unittest.TestCase):
     """Test that scanner extracts track number metadata."""

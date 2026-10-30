@@ -61,6 +61,18 @@ Both devices must be connected to the same tailnet, Tailscale Serve must be conf
 
 The server has no user authentication. Keep access restricted to a trusted private network. Do not expose the Python server directly to the public internet or configure public Tailscale Funnel access.
 
+## Filesystem access and symlink policy
+
+The server enforces path-boundary checks to prevent directory traversal and symlink-based escape from configured music directories.
+
+- **Track indexing**: During library scan, each discovered audio file is resolved to its absolute path. If the resolved path falls outside every configured music directory, the file is skipped and not indexed.
+- **Track IDs**: Generated as deterministic SHA-256 hashes of the resolved absolute path (truncated to 16 characters). This ensures identical files produce the same ID regardless of which symlink was used to discover them.
+- **Audio streaming (`/audio/{id}`)**: Before serving audio bytes, the server validates that the track's stored resolved path is under a configured music directory (after resolving both). Requests for tracks outside the boundary receive 404.
+- **Artwork retrieval (`/artwork/{id}`)**: Performs the same path-boundary validation as the audio endpoint before extracting embedded artwork.
+- **Symlinks inside music directories**: Followed during scanning. If the symlink's resolved target remains inside any configured music directory, the file is indexed and playable. If the resolved target escapes all configured music directories, the file is rejected at scan time.
+- **Symlinked music directories**: A configured `music_dirs` entry that is itself a symlink is resolved and scanned normally. The user should ensure the resolved path is intended to be accessible.
+- **Multiple music directories**: Each configured directory is validated independently. Symlinks pointing between configured music directories are allowed (the resolved target is inside another configured directory).
+
 ## Deployment assumptions
 
 - The host computer remains powered on while the server is needed.

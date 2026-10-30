@@ -6,7 +6,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from src.config import load_settings
-from src.scanner import scan_music, get_artwork_for_track, normalize
+from src.scanner import scan_music, get_artwork_for_track, normalize, is_path_under_music_dirs
 
 MANIFEST_PATH = Path(__file__).with_name("manifest.json")
 SETTINGS = load_settings()
@@ -72,19 +72,7 @@ def _is_path_under_music_dirs(path):
     """Check if an absolute path is under any of the configured music directories.
     Resolves symlinks to prevent directory traversal via symlinks.
     """
-    try:
-        resolved_path = path.resolve()
-    except (OSError, ValueError):
-        return False
-    music_dirs = SETTINGS.get("music_dirs", [])
-    for music_dir in music_dirs:
-        try:
-            resolved_music_dir = music_dir.resolve()
-            if resolved_music_dir in resolved_path.parents or resolved_music_dir == resolved_path:
-                return True
-        except (OSError, ValueError):
-            continue
-    return False
+    return is_path_under_music_dirs(path, SETTINGS.get("music_dirs", []))
 
 
 def track_quality(track):
@@ -334,6 +322,10 @@ class Handler(BaseHTTPRequestHandler):
 
             track = get_track_by_id(track_id)
             if track is None:
+                self.send_error(404)
+                return
+
+            if not _is_path_under_music_dirs(track["path"]):
                 self.send_error(404)
                 return
 
