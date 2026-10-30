@@ -1,11 +1,17 @@
 import hashlib
 import logging
+import threading
 import unicodedata
 from pathlib import Path
 
 from tinytag import TinyTag
 
 TRACK_ID_LENGTH = 16
+
+_ARTWORK_CACHE = {}
+_ARTWORK_CACHE_LOCK = threading.Lock()
+_CACHE_GENERATION = 0
+_MAX_CACHE_ENTRIES = 200
 
 
 def is_path_under_music_dirs(path, music_dirs):
@@ -26,6 +32,16 @@ def is_path_under_music_dirs(path, music_dirs):
         except (OSError, ValueError):
             continue
     return False
+
+
+def clear_artwork_cache():
+    """Clear the artwork cache and increment the generation.
+    Called after a successful library refresh to invalidate stale artwork.
+    """
+    global _CACHE_GENERATION
+    with _ARTWORK_CACHE_LOCK:
+        _ARTWORK_CACHE.clear()
+        _CACHE_GENERATION += 1
 
 
 def normalize(text):
@@ -129,9 +145,18 @@ def get_artwork_for_track(track):
     """Extract embedded artwork from an audio file on demand.
     Returns (image_data: bytes, mime_type: str) or (None, None) if no artwork found.
     """
+    track_id = track.get("id")
     path = track.get("path")
     if not path or not path.exists():
         return None, None
+
+    current_generation = None
+    if track_id is not None:
+        with _ARTWORK_CACHE_LOCK:
+            current_generation = _CACHE_GENERATION
+            cached = _ARTWORK_CACHE.get(track_id)
+            if cached is not None and cached[2] == current_generation:
+                return cached[0], cached[1]
 
     try:
         tag = TinyTag.get(path, image=True)
@@ -146,7 +171,16 @@ def get_artwork_for_track(track):
         if not mime_type:
             mime_type = "image/jpeg"
 
-        return image.data, mime_type
+        image_data = image.data
+
+        if track_id is not None:
+            with _ARTWORK_CACHE_LOCK:
+                if _CACHE_GENERATION == current_generation:
+                    if len(_ARTWORK_CACHE) >= _MAX_CACHE_ENTRIES:
+                        _ARTWORK_CACHE.pop(next(iter(_ARTWORK_CACHE)))
+                    _ARTWORK_CACHE[track_id] = (image_data, mime_type, _CACHE_GENERATION)
+
+        return image_data, mime_type
 
     except (OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logging.warning(f"Failed to extract artwork for {path}: {e}")

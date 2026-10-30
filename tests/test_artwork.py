@@ -2,6 +2,8 @@ import json
 import os
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from io import BytesIO
 from pathlib import Path
@@ -10,6 +12,8 @@ from unittest.mock import Mock, patch
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 import src.server as server
+import src.scanner as scanner
+from src.scanner import get_artwork_for_track, clear_artwork_cache
 
 
 class MockHTTPRequest:
@@ -331,6 +335,260 @@ class TestScannerArtwork(unittest.TestCase):
         data, mime = get_artwork_for_track(track)
         self.assertIsNone(data)
         self.assertIsNone(mime)
+
+
+class TestArtworkCache(unittest.TestCase):
+    """Test the artwork caching functionality."""
+
+    def setUp(self):
+        """Clear cache before each test."""
+        clear_artwork_cache()
+
+    def tearDown(self):
+        """Clear cache after each test."""
+        clear_artwork_cache()
+
+    def test_cache_hit_same_track_id(self):
+        """Test that second request for same track_id returns cached data."""
+        with patch('src.scanner.TinyTag.get') as mock_get:
+            mock_tag = Mock()
+            mock_image = Mock()
+            mock_image.data = b'cached-image-data'
+            mock_image.mime_type = 'image/jpeg'
+            mock_tag.images = Mock()
+            mock_tag.images.front_cover = mock_image
+            mock_tag.images.any = mock_image
+            mock_get.return_value = mock_tag
+
+            track = {
+                "id": "test-track-id",
+                "path": Path(__file__).parent / "nonexistent.mp3",
+            }
+
+            # Create a dummy file for path.exists() check
+            track["path"].write_bytes(b'dummy')
+
+            try:
+                # First call - should extract
+                data1, mime1 = get_artwork_for_track(track)
+                # Second call - should hit cache
+                data2, mime2 = get_artwork_for_track(track)
+
+                self.assertEqual(data1, b'cached-image-data')
+                self.assertEqual(mime1, 'image/jpeg')
+                self.assertEqual(data2, b'cached-image-data')
+                self.assertEqual(mime2, 'image/jpeg')
+                # TinyTag.get should only be called once
+                self.assertEqual(mock_get.call_count, 1)
+            finally:
+                track["path"].unlink(missing_ok=True)
+
+    def test_cache_miss_different_track_ids(self):
+        """Test that different track_ids populate separate cache entries."""
+        with patch('src.scanner.TinyTag.get') as mock_get:
+            mock_tag = Mock()
+            mock_image = Mock()
+            mock_image.data = b'image-data'
+            mock_image.mime_type = 'image/jpeg'
+            mock_tag.images = Mock()
+            mock_tag.images.front_cover = mock_image
+            mock_tag.images.any = mock_image
+            mock_get.return_value = mock_tag
+
+            track1 = {"id": "track-1", "path": Path(__file__).parent / "nonexistent1.mp3"}
+            track2 = {"id": "track-2", "path": Path(__file__).parent / "nonexistent2.mp3"}
+
+            track1["path"].write_bytes(b'dummy')
+            track2["path"].write_bytes(b'dummy')
+
+            try:
+                get_artwork_for_track(track1)
+                get_artwork_for_track(track2)
+                # Both should be extracted (2 calls)
+                self.assertEqual(mock_get.call_count, 2)
+
+                # Now call again for track1 - should hit cache
+                get_artwork_for_track(track1)
+                self.assertEqual(mock_get.call_count, 2)
+            finally:
+                track1["path"].unlink(missing_ok=True)
+                track2["path"].unlink(missing_ok=True)
+
+    def test_cache_fifo_eviction(self):
+        """Test FIFO eviction when cache exceeds max entries."""
+        with patch('src.scanner.TinyTag.get') as mock_get:
+            mock_tag = Mock()
+            mock_image = Mock()
+            mock_image.data = b'x'
+            mock_image.mime_type = 'image/jpeg'
+            mock_tag.images = Mock()
+            mock_tag.images.front_cover = mock_image
+            mock_tag.images.any = mock_image
+            mock_get.return_value = mock_tag
+
+            # Fill cache to max (200 entries)
+            for i in range(scanner._MAX_CACHE_ENTRIES):
+                track = {"id": f"track-{i}", "path": Path(__file__).parent / f"nonexistent{i}.mp3"}
+                track["path"].write_bytes(b'dummy')
+                try:
+                    get_artwork_for_track(track)
+                finally:
+                    track["path"].unlink(missing_ok=True)
+
+            # Add one more - should evict the first
+            track_new = {"id": "track-new", "path": Path(__file__).parent / "nonexistent_new.mp3"}
+            track_new["path"].write_bytes(b'dummy')
+            try:
+                get_artwork_for_track(track_new)
+            finally:
+                track_new["path"].unlink(missing_ok=True)
+
+            # The first entry should be evicted, new one present
+            with scanner._ARTWORK_CACHE_LOCK:
+                self.assertNotIn("track-0", scanner._ARTWORK_CACHE)
+                self.assertIn("track-new", scanner._ARTWORK_CACHE)
+                self.assertEqual(len(scanner._ARTWORK_CACHE), scanner._MAX_CACHE_ENTRIES)
+
+    def test_cache_invalidated_after_refresh(self):
+        """Test that cache is cleared after successful refresh."""
+        with patch('src.scanner.TinyTag.get') as mock_get:
+            mock_tag = Mock()
+            mock_image = Mock()
+            mock_image.data = b'cached-data'
+            mock_image.mime_type = 'image/jpeg'
+            mock_tag.images = Mock()
+            mock_tag.images.front_cover = mock_image
+            mock_tag.images.any = mock_image
+            mock_get.return_value = mock_tag
+
+            track = {"id": "test-track", "path": Path(__file__).parent / "nonexistent.mp3"}
+            track["path"].write_bytes(b'dummy')
+
+            try:
+                # Populate cache
+                get_artwork_for_track(track)
+                self.assertEqual(mock_get.call_count, 1)
+
+                # Call clear_artwork_cache (simulating refresh)
+                clear_artwork_cache()
+
+                # Next call should miss cache and extract again
+                get_artwork_for_track(track)
+                self.assertEqual(mock_get.call_count, 2)
+            finally:
+                track["path"].unlink(missing_ok=True)
+
+    def test_old_generation_cannot_populate_cache_after_refresh(self):
+        """Test that extraction started before refresh cannot populate new cache generation."""
+        with patch('src.scanner.TinyTag.get') as mock_get:
+            mock_tag = Mock()
+            mock_image = Mock()
+            mock_image.data = b'old-data'
+            mock_image.mime_type = 'image/jpeg'
+            mock_tag.images = Mock()
+            mock_tag.images.front_cover = mock_image
+            mock_tag.images.any = mock_image
+            mock_get.return_value = mock_tag
+
+            track = {"id": "race-track", "path": Path(__file__).parent / "nonexistent_race.mp3"}
+            track["path"].write_bytes(b'dummy')
+
+            try:
+                # Start extraction (capture generation 0)
+                # We simulate this by manually checking the logic
+                # First, populate cache at generation 0
+                get_artwork_for_track(track)
+                self.assertEqual(mock_get.call_count, 1)
+
+                # Now simulate refresh - increment generation
+                clear_artwork_cache()
+
+                # Now try to manually insert with old generation (simulating race)
+                # This tests that our generation check prevents stale insertion
+                with scanner._ARTWORK_CACHE_LOCK:
+                    old_generation = scanner._CACHE_GENERATION - 1
+                    scanner._ARTWORK_CACHE["race-track"] = (b'stale-data', 'image/jpeg', old_generation)
+
+                # Next call should miss (generation mismatch) and extract fresh
+                get_artwork_for_track(track)
+                self.assertEqual(mock_get.call_count, 2)
+
+                # Cache should have fresh data with new generation
+                with scanner._ARTWORK_CACHE_LOCK:
+                    cached = scanner._ARTWORK_CACHE.get("race-track")
+                    self.assertEqual(cached[2], scanner._CACHE_GENERATION)
+                    self.assertEqual(cached[0], b'old-data')  # same mock data
+            finally:
+                track["path"].unlink(missing_ok=True)
+
+    def test_missing_artwork_not_cached(self):
+        """Test that tracks with no artwork don't pollute cache with None."""
+        with patch('src.scanner.TinyTag.get') as mock_get:
+            mock_tag = Mock()
+            mock_tag.images = None
+            mock_get.return_value = mock_tag
+
+            track = {"id": "no-art-track", "path": Path(__file__).parent / "nonexistent_noart.mp3"}
+            track["path"].write_bytes(b'dummy')
+
+            try:
+                data, mime = get_artwork_for_track(track)
+                self.assertIsNone(data)
+                self.assertIsNone(mime)
+
+                # Cache should not have entry for this track
+                with scanner._ARTWORK_CACHE_LOCK:
+                    self.assertNotIn("no-art-track", scanner._ARTWORK_CACHE)
+            finally:
+                track["path"].unlink(missing_ok=True)
+
+    def test_concurrent_cache_access(self):
+        """Test that concurrent access doesn't corrupt cache or generation."""
+        results = []
+        errors = []
+
+        def worker(track_id):
+            try:
+                with patch('src.scanner.TinyTag.get') as mock_get:
+                    mock_tag = Mock()
+                    mock_image = Mock()
+                    mock_image.data = f'data-{track_id}'.encode()
+                    mock_image.mime_type = 'image/jpeg'
+                    mock_tag.images = Mock()
+                    mock_tag.images.front_cover = mock_image
+                    mock_tag.images.any = mock_image
+                    mock_get.return_value = mock_tag
+
+                    track = {
+                        "id": track_id,
+                        "path": Path(__file__).parent / f"nonexistent_{track_id}.mp3",
+                    }
+                    track["path"].write_bytes(b'dummy')
+                    try:
+                        data, mime = get_artwork_for_track(track)
+                        results.append((track_id, data, mime))
+                    finally:
+                        track["path"].unlink(missing_ok=True)
+            except Exception as e:
+                errors.append((track_id, e))
+
+        threads = []
+        for i in range(10):
+            t = threading.Thread(target=worker, args=(f"concurrent-{i}",))
+            threads.append(t)
+            t.start()
+
+        for t in threads:
+            t.join()
+
+        self.assertEqual(len(errors), 0, f"Errors in concurrent access: {errors}")
+        self.assertEqual(len(results), 10)
+
+        # Verify cache integrity
+        with scanner._ARTWORK_CACHE_LOCK:
+            self.assertLessEqual(len(scanner._ARTWORK_CACHE), scanner._MAX_CACHE_ENTRIES)
+            for cached in scanner._ARTWORK_CACHE.values():
+                self.assertEqual(cached[2], scanner._CACHE_GENERATION)
 
 
 if __name__ == '__main__':

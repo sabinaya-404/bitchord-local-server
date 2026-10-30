@@ -6,7 +6,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from src.config import load_settings
-from src.scanner import scan_music, get_artwork_for_track, normalize, is_path_under_music_dirs
+from src.scanner import scan_music, get_artwork_for_track, normalize, is_path_under_music_dirs, clear_artwork_cache
 
 MANIFEST_PATH = Path(__file__).with_name("manifest.json")
 SETTINGS = load_settings()
@@ -53,6 +53,7 @@ def refresh_tracks():
 
         with _TRACKS_LOCK:
             TRACKS = new_tracks
+        clear_artwork_cache()
     return True, "OK", len(new_tracks)
 
 
