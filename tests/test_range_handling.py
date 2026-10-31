@@ -41,7 +41,7 @@ class TestRangeHandling(unittest.TestCase):
 
         # Create a test file with known content
         with open(self.test_file_path, 'wb') as f:
-            # Create a file with 1000 bytes of known data
+
             f.write(b'a' * 1000)  # 1000 bytes of 'a'
 
         # Create a mock track for this file
@@ -72,11 +72,11 @@ class TestRangeHandling(unittest.TestCase):
             client_address=('127.0.0.1', 8080),
             server=Mock()
         )
-        # Initialize required attributes for BaseHTTPRequestHandler
+
         self.handler.requestline = ''
         self.handler.raw_requestline = b''
         self.handler.request_version = 'HTTP/1.1'
-        # Initialize tracking variables
+
         self.handler._status_code = 200
         self.handler.headers_sent = {}
         # Override the wfile to capture output
@@ -102,15 +102,15 @@ class TestRangeHandling(unittest.TestCase):
         """Execute the handler's do_GET method and return the response."""
         self.handler.wfile = BytesIO()
         self.handler.do_GET()
-        # Get the response data from wfile
+
         response_data = self.handler.wfile.getvalue()
-        # Parse the response to get status, headers, and body
+
         # Find the end of headers (blank line)
         header_end = response_data.find(b'\r\n\r\n')
         if header_end == -1:
             # No headers found, return everything as body
             return response_data
-        # Return just the body (after headers)
+
         return response_data[header_end + 4:]
 
     def test_normal_range_request(self):
@@ -120,12 +120,12 @@ class TestRangeHandling(unittest.TestCase):
         # Process the request to get the response
         response_body = self._get_response()
 
-        # Check that we got a 206 Partial Content response
+
         self.assertEqual(self.handler._status_code, 206)
-        # Check that we got the right content range
+
         self.assertIn('Content-Range', self.handler.headers_sent)
         self.assertEqual(self.handler.headers_sent['Content-Range'], 'bytes 0-99/1000')
-        # Check that we got 100 bytes of data
+
         self.assertEqual(len(response_body), 100)
 
     def test_open_ended_range_request(self):
@@ -135,12 +135,12 @@ class TestRangeHandling(unittest.TestCase):
         # Process the request to get the response
         response_body = self._get_response()
 
-        # Check that we got a 206 Partial Content response
+
         self.assertEqual(self.handler._status_code, 206)
-        # Check that we got the right content range
+
         self.assertIn('Content-Range', self.handler.headers_sent)
         self.assertEqual(self.handler.headers_sent['Content-Range'], 'bytes 500-999/1000')
-        # Check that we got 500 bytes of data
+
         self.assertEqual(len(response_body), 500)
 
     def test_suffix_range_request(self):
@@ -150,12 +150,12 @@ class TestRangeHandling(unittest.TestCase):
         # Process the request to get the response
         response_body = self._get_response()
 
-        # Check that we got a 206 Partial Content response
+
         self.assertEqual(self.handler._status_code, 206)
-        # Check that we got the right content range
+
         self.assertIn('Content-Range', self.handler.headers_sent)
         self.assertEqual(self.handler.headers_sent['Content-Range'], 'bytes 900-999/1000')
-        # Check that we got 100 bytes of data
+
         self.assertEqual(len(response_body), 100)
 
     def test_oversized_suffix_range(self):
@@ -165,12 +165,12 @@ class TestRangeHandling(unittest.TestCase):
         # Process the request to get the response
         response_body = self._get_response()
 
-        # Check that we got a 206 Partial Content response (entire file with range header)
+
         self.assertEqual(self.handler._status_code, 206)
-        # Check that we got the right content range
+
         self.assertIn('Content-Range', self.handler.headers_sent)
         self.assertEqual(self.handler.headers_sent['Content-Range'], 'bytes 0-999/1000')
-        # Check that we got 1000 bytes of data
+
         self.assertEqual(len(response_body), 1000)
 
     def test_invalid_range_request(self):
@@ -180,9 +180,9 @@ class TestRangeHandling(unittest.TestCase):
         # Process the request to get the response
         self._get_response()
 
-        # Check that we got a 416 Range Not Satisfiable response
+
         self.assertEqual(self.handler._status_code, 416)
-        # Check that we got the right content range
+
         self.assertIn('Content-Range', self.handler.headers_sent)
         self.assertEqual(self.handler.headers_sent['Content-Range'], 'bytes */1000')
 
@@ -193,24 +193,24 @@ class TestRangeHandling(unittest.TestCase):
         # Process the request to get the response
         self._get_response()
 
-        # Check that we got a 416 Range Not Satisfiable response
+
         self.assertEqual(self.handler._status_code, 416)
-        # Check that we got the right content range
+
         self.assertIn('Content-Range', self.handler.headers_sent)
         self.assertEqual(self.handler.headers_sent['Content-Range'], 'bytes */1000')
 
     def test_zero_length_file_range(self):
         """Test range requests on zero-length file return 416."""
-        # Create a zero-length file
+
         zero_file_path = Path(self.test_dir.name) / "zero.mp3"
         zero_file_path.touch()
 
-        # Create a track for the zero-length file
+
         zero_track = self.mock_track.copy()
         zero_track["id"] = "zero-track"
         zero_track["path"] = zero_file_path
 
-        # Update the patched tracks
+
         server.TRACKS = [zero_track]
         server.TRACKS_BY_ID = {zero_track["id"]: zero_track}
 
@@ -220,7 +220,7 @@ class TestRangeHandling(unittest.TestCase):
         # Process the request to get the response
         self._get_response()
 
-        # Check that we got a 416 Range Not Satisfiable response
+
         self.assertEqual(self.handler._status_code, 416)
         self.assertIn("Content-Range", self.handler.headers_sent)
         self.assertEqual(self.handler.headers_sent["Content-Range"], "bytes */0")
@@ -295,11 +295,11 @@ class TestSymlinkProtectionIntegration(unittest.TestCase):
             client_address=('127.0.0.1', 8080),
             server=Mock()
         )
-        # Initialize required attributes for BaseHTTPRequestHandler
+
         self.handler.requestline = ''
         self.handler.raw_requestline = b''
         self.handler.request_version = 'HTTP/1.1'
-        # Initialize tracking variables
+
         self.handler._status_code = 200
         self.handler.headers_sent = {}
         # Override the wfile to capture output
@@ -323,15 +323,15 @@ class TestSymlinkProtectionIntegration(unittest.TestCase):
         """Execute the handler's do_GET method and return the response."""
         self.handler.wfile = BytesIO()
         self.handler.do_GET()
-        # Get the response data from wfile
+
         response_data = self.handler.wfile.getvalue()
-        # Parse the response to get status, headers, and body
+
         # Find the end of headers (blank line)
         header_end = response_data.find(b'\r\n\r\n')
         if header_end == -1:
             # No headers found, return everything as body
             return response_data
-        # Return just the body (after headers)
+
         return response_data[header_end + 4:]
 
     def test_outside_path_blocked_normal_range(self):
@@ -367,16 +367,16 @@ class TestSymlinkProtectionIntegration(unittest.TestCase):
 
     def test_outside_path_blocked_zero_length_file_range(self):
         """Test that a zero-length file outside music directories is blocked."""
-        # Create a zero-length file
+
         zero_file_path = Path(self.test_dir.name) / "zero.mp3"
         zero_file_path.touch()
 
-        # Create a track for the zero-length file
+
         zero_track = self.mock_track.copy()
         zero_track["id"] = "zero-track-outside"
         zero_track["path"] = zero_file_path.resolve()
 
-        # Update the patched tracks
+
         server.TRACKS = [zero_track]
         server.TRACKS_BY_ID = {zero_track["id"]: zero_track}
 
@@ -386,7 +386,7 @@ class TestSymlinkProtectionIntegration(unittest.TestCase):
         # Process the request to get the response
         self._get_response()
 
-        # Check that we got a 404 (blocked) not 416
+
         self.assertEqual(self.handler._status_code, 404)
 
     def test_outside_path_blocked_zero_length_file_without_range(self):
@@ -414,7 +414,7 @@ class TestSymlinkProtectionIntegration(unittest.TestCase):
             music_dir_path = Path(music_dir)
             with tempfile.TemporaryDirectory() as outside_dir:
                 outside_dir_path = Path(outside_dir)
-                # Create the target file outside
+
                 target_file = outside_dir_path / "target.mp3"
                 target_file.write_bytes(b'a' * 1000)
                 # Inside the music directory, create a symlink pointing to the target file
@@ -429,7 +429,7 @@ class TestSymlinkProtectionIntegration(unittest.TestCase):
                     original_tracks = server.TRACKS
                     original_tracks_by_id = server.TRACKS_BY_ID
                     try:
-                        # Set music_dirs to only our music directory (to isolate)
+
                         server.SETTINGS = {
                             **server.SETTINGS,
                             "music_dirs": [music_dir_path]
@@ -443,7 +443,7 @@ class TestSymlinkProtectionIntegration(unittest.TestCase):
                         track = tracks[0]
                         # The track's path should be the resolved path (i.e., target_file)
                         self.assertEqual(track["path"], target_file.resolve())
-                        # Create a handler for this track
+
                         handler = server.Handler(
                             request=MockHTTPRequest(),
                             client_address=('127.0.0.1', 8080),

@@ -72,7 +72,7 @@ class TestArtwork(unittest.TestCase):
             client_address=('127.0.0.1', 8080),
             server=Mock()
         )
-        # Initialize required attributes for BaseHTTPRequestHandler
+
         self.handler.requestline = ''
         self.handler.raw_requestline = b''
         self.handler.request_version = 'HTTP/1.1'
@@ -278,7 +278,7 @@ class TestArtwork(unittest.TestCase):
         import tempfile
         from pathlib import Path
 
-        # Create a file outside any music directory
+
         with tempfile.TemporaryDirectory() as outside_dir:
             outside_path = Path(outside_dir)
             outside_file = outside_path / "outside.mp3"
@@ -374,7 +374,7 @@ class TestArtworkCache(unittest.TestCase):
                 "path": Path(__file__).parent / "nonexistent.mp3",
             }
 
-            # Create a dummy file for path.exists() check
+
             track["path"].write_bytes(b'dummy')
 
             try:
@@ -522,7 +522,7 @@ class TestArtworkCache(unittest.TestCase):
                 get_artwork_for_track(track)
                 self.assertEqual(mock_get.call_count, 2)
 
-                # Cache should have fresh data with new generation
+
                 with scanner._ARTWORK_CACHE_LOCK:
                     cached = scanner._ARTWORK_CACHE.get("race-track")
                     self.assertEqual(cached[2], scanner._CACHE_GENERATION)
@@ -545,7 +545,7 @@ class TestArtworkCache(unittest.TestCase):
                 self.assertIsNone(data)
                 self.assertIsNone(mime)
 
-                # Cache should not have entry for this track
+
                 with scanner._ARTWORK_CACHE_LOCK:
                     self.assertNotIn("no-art-track", scanner._ARTWORK_CACHE)
             finally:

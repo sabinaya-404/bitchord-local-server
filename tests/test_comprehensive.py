@@ -69,7 +69,7 @@ class TestConstantsAndHelpers(unittest.TestCase):
         """Test that get_track_byid helper function exists."""
         if TAG_AVAILABLE:
             self.assertTrue(hasattr(server, 'get_track_by_id'))
-            # Check that it's callable
+
             self.assertTrue(callable(server.get_track_by_id))
 
 
@@ -342,7 +342,7 @@ class TestSymlinkProtection(unittest.TestCase):
         # Create a temporary directory outside music dirs
         with tempfile.TemporaryDirectory() as tmpdir:
             outside_dir = Path(tmpdir)
-            # Create a symlink inside the first music directory pointing to outside_dir
+
             link_path = music_dirs[0] / "symlink_outside"
             try:
                 os.symlink(outside_dir, link_path)
@@ -375,10 +375,10 @@ class TestSymlinkProtection(unittest.TestCase):
             self.skipTest("No music directories configured")
         with tempfile.TemporaryDirectory(dir=music_dirs[0]) as tmpdir:
             tmpdir_path = Path(tmpdir)
-            # Create a real file inside the music directory
+
             real_file = tmpdir_path / "real.mp3"
             real_file.write_bytes(b"real audio data")
-            # Create a symlink pointing to the real file
+
             link_path = music_dirs[0] / "link_inside.mp3"
             try:
                 os.symlink(real_file, link_path)
@@ -441,7 +441,7 @@ class TestSymlinkProtection(unittest.TestCase):
             real_music = Path(real_music_dir)
             real_file = real_music / "real.mp3"
             real_file.write_bytes(b"real audio data")
-            # Create a symlink to the real music directory
+
             link_dir = music_dirs[0] / "symlinked_music"
             try:
                 os.symlink(real_music, link_dir, target_is_directory=True)

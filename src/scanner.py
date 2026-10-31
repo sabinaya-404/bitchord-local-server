@@ -51,11 +51,11 @@ def normalize(text):
     # NFKD decomposes accented chars; filter out combining marks
     text = unicodedata.normalize("NFKD", text)
     text = "".join(c for c in text if not unicodedata.combining(c))
-    # casefold
+
     text = text.casefold()
     # punctuation -> spaces
     text = "".join(c if c.isalnum() or c.isspace() else " " for c in text)
-    # collapse whitespace
+
     return " ".join(text.split())
 
 

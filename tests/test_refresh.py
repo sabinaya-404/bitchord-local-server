@@ -72,7 +72,7 @@ class TestRefresh(unittest.TestCase):
             client_address=('127.0.0.1', 8080),
             server=Mock()
         )
-        # Initialize required attributes for BaseHTTPRequestHandler
+
         self.handler.requestline = ''
         self.handler.raw_requestline = b''
         self.handler.request_version = 'HTTP/1.1'
@@ -100,7 +100,7 @@ class TestRefresh(unittest.TestCase):
         self.handler.wfile = BytesIO()
         self.handler.do_POST()
         response_data = self.handler.wfile.getvalue()
-        # Parse the response to get body
+
         header_end = response_data.find(b'\r\n\r\n')
         if header_end == -1:
             return None
@@ -194,7 +194,7 @@ class TestRefresh(unittest.TestCase):
         def reader():
             """Simulate concurrent read requests."""
             for _ in range(50):
-                # Create a new handler for each read
+
                 h = server.Handler(
                     request=MockHTTPRequest(),
                     client_address=('127.0.0.1', 8080),
@@ -309,7 +309,7 @@ class TestRefresh(unittest.TestCase):
             for t in threads:
                 t.start()
 
-            # Wait for at least one scan to start, then allow it to proceed
+
             scan_started.wait(timeout=2)
             scan_continues.set()
 
@@ -376,7 +376,7 @@ class TestRefresh(unittest.TestCase):
             time.sleep(0.05)
             self.assertFalse(second_scan_started.is_set(), "Second scan started before first finished")
 
-            # Wait for both to complete
+
             t1.join(timeout=5)
             t2.join(timeout=5)
 
@@ -481,7 +481,7 @@ class TestRefresh(unittest.TestCase):
             refresh_thread = threading.Thread(target=do_refresh)
             refresh_thread.start()
 
-            # Wait for scan to start, then let it complete
+
             scan_ready.wait(timeout=2)
             scan_continues.set()
 
@@ -555,7 +555,7 @@ class TestRefresh(unittest.TestCase):
             refresh_thread = threading.Thread(target=do_refresh)
             refresh_thread.start()
 
-            # Wait for scan to start
+
             scan_started.wait(timeout=2)
 
             # Fire search while scan is running

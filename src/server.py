@@ -276,7 +276,7 @@ class Handler(BaseHTTPRequestHandler):
 
                 length = end - start + 1
 
-                # Open file first to validate it exists and is readable
+
                 audio_file = path.open("rb")
                 audio_file.seek(start)
 
@@ -298,7 +298,7 @@ class Handler(BaseHTTPRequestHandler):
 
                 self.end_headers()
 
-                # Stream in 64 KB chunks
+
                 CHUNK_SIZE = 64 * 1024
                 remaining = length
 
